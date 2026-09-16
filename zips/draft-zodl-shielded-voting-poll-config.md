@@ -109,6 +109,11 @@ without redesign.
 - The decryption threshold in use for a round, and the period over which
   key shares are retained, are published, since both bound the
   amount-privacy claims made elsewhere in the protocol.
+- The organisations holding shares of the election authority key have
+  stated, before the round opens, that they will tally it.
+- The conditions under which a round's result may be described as
+  representative of coinholder sentiment are stated, rather than left
+  to the reader of a result.
 
 
 # Non-requirements
@@ -310,7 +315,7 @@ All components are fixed width, so the encoding is unambiguous without
 length prefixes. The domain separator distinguishes these bytes from
 any other signature this key may produce.
 
-### Verification
+### Signature Verification
 
 For each entry in a round's `signatures`, a wallet:
 
@@ -405,6 +410,84 @@ Where a deployment concludes that retention is nonetheless required, it
 MUST state for how long, and MUST treat that period as the period over
 which its amount-privacy claims hold — not the duration of the round.
 
+### Ratification
+
+Administrator attestation ([Configuration Authentication]) establishes
+that a round's parameters are correct. It does not establish that the
+round will be tallied. Those are different parties: administrators
+configure a round, key-share holders decrypt its result. A round can be
+correctly configured, voted in, and never opened.
+
+Each holder of a share of $\mathsf{ea}\_\mathsf{sk}$ for a round MAY
+publish a **ratification**: a signed statement that it holds a share
+for that round and will participate in the tally.
+
+The bytes covered by a ratification signature are the concatenation, in
+this order, of:
+
+| Component | Width |
+|---|---|
+| The ASCII string `ZcashVotingRoundRatification:v1` | 31 bytes |
+| `vote_round_id` | 32 bytes |
+| `ea_pk` | 32 bytes |
+
+Binding to $\mathsf{ea}\_\mathsf{pk}$ as well as to the round
+identifier is necessary: a ratification that covered only the round
+would carry over to a round rekeyed after the fact, which is the case
+it most needs to exclude.
+
+A round MUST NOT open for voting unless at least $t$ distinct key-share
+holders have published valid ratifications for it, where $t$ is the
+decryption threshold for that round ([Threshold]). A deployment MUST
+publish the ratifications it collected, and SHOULD obtain them from all
+$n$ holders rather than the minimum.
+
+The threshold for ratification is $t$ rather than a separate parameter
+because below $t$ the question does not arise: a round ratified by
+fewer than $t$ holders cannot be tallied even if every ratifying holder
+honours its statement. Requiring $t$ makes the published ratifications
+a statement that the round is tallyable, not merely that some holders
+are willing.
+
+A ratification is a statement of intent, not an enforceable
+commitment. A holder can ratify and then decline to participate, and
+nothing in this document prevents that. What ratification provides is
+that the decision is made and published *before* voters commit their
+balances, rather than discovered afterwards — and that a holder
+declining to tally a round it ratified is visibly departing from a
+signed statement rather than exercising an unstated discretion. See
+[Why Ratification Precedes Voting].
+
+## Representativeness
+
+This section constrains how a round's result may be described. It is
+normative because the description is the product: a poll exists to be
+cited.
+
+A round's result MUST NOT be described as representative of coinholder
+sentiment unless, for the full duration of the round, at least $k$
+independent conforming wallet implementations were available to voters,
+where $k$ is a deployment parameter that MUST be at least 2.
+
+Two implementations are **independent** for this purpose if neither
+derives its share decomposition ([^voting-protocol]), its server
+selection, or its submission scheduling from the same library as the
+other. Wallets that share a voting library are one implementation for
+this test regardless of how they are branded, because they share the
+behaviour that determines what a voter discloses. [^wallet-api]
+requires a wallet to disclose whether it implements these behaviours
+itself or consumes them, which makes the test checkable from published
+information rather than from inspection.
+
+A deployment MUST publish, for each round, the implementations it
+counted and the basis on which it considered them independent.
+
+Where the condition is not met, a round remains valid and its result
+remains verifiable; what is not available is the claim that the result
+measures sentiment rather than the behaviour of the voters who had
+access to the one client that existed. See
+[Why Implementation Diversity Is a Precondition].
+
 ## Verification
 
 A round is **well-formed** if a verifier, using only a Zcash full node
@@ -438,6 +521,50 @@ Recomputation is what makes attestation meaningful, which is why this
 document specifies it first. A signature threshold is valuable, but it
 is a multiplier on an underlying check; without the check there is
 nothing to multiply.
+
+## Why Ratification Precedes Voting
+
+A voter deciding whether to participate is deciding whether to expose a
+quantity — their balance at the snapshot, to the extent the protocol
+permits — in exchange for influence over an outcome. That trade is only
+available if the outcome will be produced.
+
+Without ratification the voter has no way to check the second half. The
+round configuration names $\mathsf{ea}\_\mathsf{pk}$, but a public key
+is not a statement by anybody that they will use the corresponding
+shares. A voter can verify that a round is correctly configured and
+still be voting into a round that no key-share holder intends to open.
+
+Placing ratification before the round opens rather than at tally time
+is the whole of the requirement. A statement collected afterwards
+records what happened; a statement collected beforehand is an input the
+voter can act on.
+
+## Why Implementation Diversity Is a Precondition
+
+A single implementation is a single point of behavioural failure that
+no amount of protocol correctness compensates for.
+
+Where one client is the only way to vote, its defaults are the
+protocol as experienced by every voter. If it batches share
+submissions, every voter batches. If it delegates the full balance
+rather than a subset, every voter does. If it reimplements server
+selection and so does not inherit a library's constraints, that gap
+applies to the entire electorate at once. Each of these has occurred in
+deployed voting clients, and in each case the protocol documents
+permitted the correct behaviour while the sole available client did
+something else.
+
+Diversity does not prevent any of that. What it does is make the
+failure partial and detectable: two independent implementations that
+disagree about what a conforming client does expose the ambiguity, and
+voters retain a choice that does not depend on one vendor's judgement.
+
+The requirement is placed here, on the round, rather than in
+[^wallet-api], because it is not a property any single wallet can
+satisfy. A wallet cannot make itself diverse. It is a property of the
+round's circumstances, and therefore of whether the round's result
+supports the claim that is made about it.
 
 ## Why Not Consensus Validation
 
@@ -474,6 +601,17 @@ response, rather than a silent change in the eligible note set.
 
 # Deployment
 
+A deployment MUST publish, for each round, in addition to the
+parameters required elsewhere in this document:
+
+| Parameter | Constraint |
+|---|---|
+| $m$ | Administrator signature threshold; MUST be at least 2. See [Signature Verification]. |
+| $t$, $n$ | Decryption threshold and key-share holder count. See [Threshold]. |
+| $k$ | Independent conforming wallet implementations required; MUST be at least 2. See [Representativeness]. |
+| Ratifications | The key-share holder ratifications collected for the round. See [Ratification]. |
+
+
 - $\mathsf{min}\_\mathsf{confirmations}$: RECOMMENDED value 100 blocks.
   A deployment MAY choose a larger value. The value used for a round
   MUST be published with its configuration.
@@ -507,6 +645,8 @@ response, rather than a silent change in the eligible note set.
 [^protocol]: [Zcash Protocol Specification](protocol/protocol.pdf)
 
 [^rfc8032]: [RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)](https://www.rfc-editor.org/rfc/rfc8032)
+
+[^wallet-api]: [Shielded Voting Wallet API](draft-valargroup-shielded-voting-wallet-api)
 
 [^voting-protocol]: [Draft ZIP: Shielded Voting Protocol](draft-valargroup-shielded-voting)
 
