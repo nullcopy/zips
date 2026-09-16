@@ -250,28 +250,95 @@ $\mathsf{NF}(H)$ MUST apply the same requirements to its ingest
 pipeline.
 
 
-## Round Identifier, Configuration, and Attestation
+## Round Configuration
 
-A round's identifier, the schema of its configuration document, the set
-of administrators, and the rules by which wallets authenticate a
-configuration are specified in a forthcoming revision of this document.
+A round configuration is the document from which a wallet learns that a
+round exists and what it is anchored to. It is published out-of-band;
+the vote chain does not serve it.
 
-Until then, implementers should note two properties of the current
-deployed arrangement that this document is intended to change:
+A configuration entry for a round MUST carry every field needed to
+perform [Snapshot Recomputation] and to check the result:
 
-- Administrator signatures in the wallet API draft's configuration
-  trust model cover only the 32-byte election authority public key
-  $\mathsf{ea}\_\mathsf{pk}$. They do not cover the snapshot height,
-  the snapshot block hash, either snapshot root, or the proposals.
-  Nothing an administrator signs constrains the snapshot.
-- A wallet is required to accept a round entry if *at least one*
-  signature validates.
+| Field | Type | Description |
+|---|---|---|
+| `auth_version` | integer | Schema version of this entry. This document defines 2. |
+| `vote_round_id` | hex, 64 chars | Round identifier, as derived by the vote chain. |
+| `snapshot_height` | integer | Zcash mainnet height $H$. |
+| `snapshot_blockhash` | base64, 32 bytes | Hash of the block at height $H$. |
+| `nc_root` | base64, 32 bytes | Orchard note commitment tree root at $H$. |
+| `nullifier_imt_root` | base64, 32 bytes | Nullifier non-membership tree root at $H$. |
+| `proposals_hash` | base64, 32 bytes | Commitment to the round's proposals. |
+| `vote_end_time` | integer | Unix timestamp after which votes are not accepted. |
+| `ea_pk` | base64, 32 bytes | Election authority public key for this round. |
+| `min_confirmations` | integer | Confirmation depth used when selecting $H$ (see [Snapshot Height Selection]). |
+| `signatures` | array | Administrator signatures; see [Configuration Authentication]. |
 
-A future revision of this document will require that administrator
-attestations cover a round's defining fields, including both snapshot
-roots, and that wallets enforce a threshold of administrator
-signatures.
+An entry with `auth_version` 1, which carries only `ea_pk` and
+`signatures`, MUST NOT be accepted for a round created after this
+document takes effect. Wallets MAY continue to accept version 1 entries
+for rounds created earlier, and if they do MUST treat the round's
+snapshot as unattested.
 
+
+## Configuration Authentication
+
+Administrators attest to a round by signing it. This section specifies
+what they sign and how many signatures a wallet requires.
+
+### Covered Bytes
+
+For `auth_version` 2, the bytes covered by each signature are the
+concatenation, in this order, of:
+
+| Component | Width |
+|---|---|
+| The ASCII string `ZcashVotingRoundAttestation:v2` | 30 bytes |
+| `vote_round_id` | 32 bytes |
+| `snapshot_height`, big-endian unsigned | 4 bytes |
+| `snapshot_blockhash` | 32 bytes |
+| `nc_root` | 32 bytes |
+| `nullifier_imt_root` | 32 bytes |
+| `proposals_hash` | 32 bytes |
+| `vote_end_time`, big-endian unsigned | 8 bytes |
+| `ea_pk` | 32 bytes |
+| `min_confirmations`, big-endian unsigned | 4 bytes |
+
+All components are fixed width, so the encoding is unambiguous without
+length prefixes. The domain separator distinguishes these bytes from
+any other signature this key may produce.
+
+### Verification
+
+For each entry in a round's `signatures`, a wallet:
+
+1. MUST resolve `key_id` to an administrator key in its trusted key
+   set. If no matching entry exists, the signature MUST be treated as
+   invalid.
+2. MUST verify that the signature's `alg` matches the `alg` declared on
+   the resolved key. If they differ, the signature MUST be treated as
+   invalid.
+3. MUST verify the signature over the bytes defined in [Covered Bytes].
+   For `"ed25519"`, per RFC 8032 [^rfc8032].
+4. MUST count at most one valid signature per distinct `key_id`.
+
+A wallet MUST accept a round entry only if the number of valid
+signatures is at least $m$, where $m$ is the administrator signature
+threshold. $m$ MUST be at least 2, and MUST be configured in the
+wallet's trusted key set rather than read from the round entry.
+
+A threshold read from the document it authenticates provides no
+assurance, since a party able to publish a configuration could also
+set its threshold to 1.
+
+### Administrator Obligations
+
+An administrator MUST NOT produce a signature over a round entry unless
+it has performed [Snapshot Recomputation] for that round, using a Zcash
+full node under its own control, and obtained values matching
+`nc_root` and `nullifier_imt_root` in the entry.
+
+An administrator MUST NOT treat agreement with another party's copy of
+the configuration as satisfying this obligation.
 
 ## Verification
 
@@ -355,9 +422,6 @@ response, rather than a silent change in the eligible note set.
 
 - Consensus validation of the snapshot roots by the vote chain, as
   discussed in [Why Not Consensus Validation].
-- The round identifier derivation, configuration schema, administrator
-  set, and attestation rules are deferred to a forthcoming revision of
-  this document.
 - The Electoral Authority key ceremony, previously drafted separately,
   is expected to be incorporated into this document, since
   $\mathsf{ea}\_\mathsf{pk}$ is a per-round configuration value.
@@ -373,6 +437,8 @@ response, rather than a silent change in the eligible note set.
 [^zip-0200]: [ZIP 200: Network Upgrade Mechanism](zip-0200)
 
 [^protocol]: [Zcash Protocol Specification](protocol/protocol.pdf)
+
+[^rfc8032]: [RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)](https://www.rfc-editor.org/rfc/rfc8032)
 
 [^voting-protocol]: [Draft ZIP: Shielded Voting Protocol](draft-valargroup-shielded-voting)
 
