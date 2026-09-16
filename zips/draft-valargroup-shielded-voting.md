@@ -1998,8 +1998,65 @@ remaining inputs.
 # Deployment
 
 This ZIP does not specify a consensus change to the Zcash mainchain.
-Deployment considerations are specific to the vote chain and will be
-addressed in the operational voting process ZIP.
+
+The parameters below are specific to a deployment rather than to the
+protocol, but they are recorded here, with the protocol they
+parameterise, rather than in a separate operational document. A
+parameter stated apart from the claim that depends on it can drift from
+it without either document becoming self-inconsistent, which is how
+several of the divergences noted below arose.
+
+A deployment MUST publish the values it uses for each parameter in this
+section.
+
+## Protocol parameters
+
+| Parameter | Value | Constraint |
+|---|---|---|
+| $N_s$ | 16 | Shares per vote commitment. |
+| Ballot unit | 12,500,000 zatoshi | 0.125 ZEC per ballot; see [Ballot Scaling]. |
+| Share range | $[0, 2^{30})$ | Per-share plaintext bound. |
+| Decomposition | Randomized | MUST satisfy [Vote Share]; even splitting is forbidden. |
+| Shares per server | $\leq \lceil N_s / s \rceil$ | Server-assisted path only; see [Server Selection]. |
+
+## Tally units
+
+Tallies are denominated in ballots, not ZEC. A deployment MUST state
+the unit of any published threshold, quorum or result. A threshold
+expressed as 1,000,000 ZEC is 8,000,000 ballots.
+
+## Implementation versions
+
+Because the circuits, the vote chain and the client library evolve
+independently, a deployment MUST publish the exact versions in use for
+a round, and any party reproducing or auditing a round MUST pin them.
+Recording the version of the client library alone is insufficient: the
+circuits determine what the proofs mean.
+
+## Known divergences
+
+The following differences between this specification and deployed
+implementations are recorded so that they are not rediscovered as
+defects. A deployment SHOULD resolve each, in the specification or in
+the implementation.
+
+- **Last-moment window.** Earlier drafts defined a single-share window
+  of $\min(0.1 \times \text{round duration}, 3600)$ seconds. Deployed
+  implementations have used 40% of the round duration capped at six
+  hours — for a 21-day round, the final six hours rather than the final
+  hour. This ZIP removes single-share mode entirely; see
+  [Why There Is No Single-Share Mode].
+- **Per-server share limits.** Some deployed client libraries cap the
+  number of a vote's shares sent to any one server. No such limit
+  appeared in any specification, and the libraries that implement one
+  document it as a per-server bound that makes no claim about colluding
+  servers. [Server Selection] now specifies the limit normatively.
+- **Share decomposition.** Deployed implementations have divided the
+  ballot count evenly across the $N_s$ shares. [Vote Share] forbids
+  this; see [Why Randomized Share Decomposition].
+- **Threshold.** The decryption threshold stated in companion documents
+  and the threshold used in deployment have differed. The value in use
+  MUST be published; see [^ea-ceremony].
 
 construction.
 
