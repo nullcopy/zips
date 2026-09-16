@@ -161,14 +161,24 @@ established in [^balance-proof].
 
 **Balance hiding via vote splitting.** A voter's total ballot count is
 decomposed into $N_s$ shares encrypted under the election authority's
-public key. Each share is submitted independently (potentially via
-different submission servers at randomized delays), preventing an
-observer from reconstructing the voter's total weight from individual
-submissions.
+public key, and each share is submitted independently. This raises the
+cost of recovering a voter's total weight, but it does not by itself
+hide that total. Because the shares sum to
+$\mathsf{num}\_\mathsf{ballots}$, any party able to decrypt individual
+share ciphertexts learns an estimate of the total from any share it
+decrypts, with accuracy determined by the decomposition strategy
+(see [Vote Share] and [Why Randomized Share Decomposition]). Vote
+splitting is therefore a mitigation whose strength rests on the
+threshold assumption stated below, not an independent guarantee.
 
-**Individual vote amounts hidden.** Each share is an El Gamal ciphertext
-whose plaintext value is never revealed. Only the aggregate total per
-(proposal, decision) pair is decrypted at tally time.
+**Individual vote amounts hidden from the public.** Each share is an
+El Gamal ciphertext whose plaintext value is never revealed on-chain,
+and only the aggregate total per (proposal, decision) pair is decrypted
+at tally time. This holds against any party that does not hold $t$
+shares of $\mathsf{ea}\_\mathsf{sk}$. It does not hold against the
+threshold itself: the key that opens the aggregate opens any individual
+share ciphertext, and those ciphertexts are recorded on the vote chain
+permanently.
 
 **Vote commitment unlinkability.** The Vote Reveal Proof proves
 that a revealed share belongs to some valid Vote Commitment in the VCT
@@ -185,11 +195,21 @@ against the EA relies on vote splitting: the EA would see encrypted
 shares but cannot link them to specific voters or vote commitments.
 Submission servers learn the encrypted share ciphertext, blind factor,
 and blinded share commitments for each share they submit, along with
-the proposal identifier and vote decision, but cannot decrypt plaintext
-amounts or link shares to voter identities. The
-primary trust requirement on submission servers is not leaking timing
-metadata; using multiple independent servers with randomized delays
-for submission mitigates this risk. See [^submission-server].
+the proposal identifier and vote decision. They cannot decrypt
+plaintext amounts. They can, however, determine that two shares belong
+to the same vote: the Share Submission Payload carries
+$\mathsf{vc}$, the VCT position, and
+$\mathsf{shares}\_\mathsf{hash}$, each of which is identical across all
+$N_s$ payloads of one vote (see [Share Submission Payload]). A server
+that receives two or more of a voter's shares can group them from the
+payload contents alone, without timing analysis.
+
+The primary trust requirement on submission servers is therefore not
+that they avoid leaking timing metadata, but that they do not correlate
+payloads, and that they do not combine that correlation with the
+ability to decrypt. Randomized delays and multiple servers do not
+address the correlation channel, because the correlating values are
+carried in the payload itself. See [^submission-server].
 
 **Non-membership tree queries.** Obtaining exclusion proofs for the
 nullifier non-membership tree during delegation requires querying a data
@@ -207,6 +227,12 @@ see [^pir-governance].
 - No double voting for the same voting share within the same proposal.
 - Individual vote amounts are not revealed at any point; only aggregate
   totals per (proposal, decision) pair are recoverable.
+  **The design specified in this ZIP does not currently meet this
+  requirement.** The election authority key opens individual share
+  ciphertexts as readily as the aggregate, so any party holding $t$
+  key shares can recover individual vote amounts. This requirement is
+  retained as stated because it expresses the intended guarantee; see
+  [Open issues] for the work needed to satisfy it.
 - The aggregate tally is publicly verifiable: any party can confirm the
   homomorphic accumulation.
 - The delegation phase is compatible with hardware wallets that support
@@ -419,13 +445,31 @@ is being opened.
 ### Vote Share
 
 A vote share is one of $N_s = 16$ encrypted portions of a voter's ballot
-count within a VC. The value 16 is chosen as a sufficiently high number
-to ensure amount privacy through share decomposition. This ZIP
-constrains only that the shares sum to $\mathsf{num}\_\mathsf{ballots}$
-and that each share is in $[0, 2^{30})$; the strategy for how the
-client decomposes the ballot count across shares (e.g., uniform random
-vs. powers-of-two denominations) affects temporal mixing effectiveness
-and is specified in [^submission-server].
+count within a VC.
+
+The shares MUST sum to $\mathsf{num}\_\mathsf{ballots}$ and each share
+MUST be in $[0, 2^{30})$. In addition, the decomposition MUST satisfy
+the following requirement.
+
+**Decomposition requirement.** The share values MUST NOT be a
+deterministic function of $\mathsf{num}\_\mathsf{ballots}$. Concretely,
+a client MUST NOT divide the ballot count evenly across the $N_s$
+shares, and MUST NOT use any other rule under which the value of a
+single share determines $\mathsf{num}\_\mathsf{ballots}$ up to a
+publicly known bound.
+
+A conforming default decomposition is:
+
+1. Sample $N_s - 1$ values $u_1 \ldots u_{N_s - 1}$ uniformly at random
+   from $\{0 \ldots \mathsf{num}\_\mathsf{ballots}\}$.
+2. Sort them, and set the share values to the successive differences of
+   $0, u_{(1)}, \ldots, u_{(N_s - 1)}, \mathsf{num}\_\mathsf{ballots}$.
+3. Apply a uniformly random permutation to the resulting $N_s$ values
+   before assigning them to share indices.
+
+See [Why Randomized Share Decomposition] for what this does and does not
+achieve; in particular, it reduces but does not eliminate the
+information a decrypted share carries about the voter's total.
 
 For share index $i \in \{0 \ldots N_s - 1\}$:
 
@@ -622,6 +666,13 @@ The 30-bit upper bound accommodates up to $\approx 134$ million ZEC,
 well above the 21 million ZEC supply cap. The minimum of 1 ballot
 ensures that holdings below 0.125 ZEC MUST NOT produce voting
 authority.
+
+Because one ballot equals 0.125 ZEC, the unit of the tally is the
+ballot, not ZEC. Any participation threshold, quorum, or published
+result expressed in ZEC MUST be converted before it is compared against
+a tally: a threshold of 1,000,000 ZEC corresponds to 8,000,000 ballots.
+Implementations and operational procedures MUST state which unit a
+published figure is in.
 
 
 ## Delegation Phase
@@ -1230,7 +1281,8 @@ shares are sent to other servers, each of which receives only its own
 share's raw data. To recompute $\mathsf{shares}\_\mathsf{hash}$ in
 condition 3 of the Vote Reveal Proof, the server uses the blinded
 share commitments, which do not expose the ciphertexts or blind
-factors of the other shares (see [Why Per-Server Share Isolation]).
+factors of the other shares (see
+[Why Other Shares' Ciphertexts Are Withheld]).
 
 Voters MUST distribute shares across multiple independent servers to
 further limit any single server's view of their voting activity.
@@ -1436,13 +1488,29 @@ protocol) are specified in [^balance-proof].
 
 ## Why $N_s$ Shares Per Vote
 
-Splitting a vote into $N_s$ shares serves two purposes. First, it
-provides temporal unlinkability: shares are submitted independently at
-client-chosen times spread across the voting window, preventing an
-observer from attributing all shares to a single voter by timing
-correlation. Second, it limits the election authority's view: even if
-the EA decrypts individual ciphertexts, it sees only individual shares,
-not a voter's complete ballot allocation.
+Splitting a vote into $N_s$ shares is intended to serve two purposes.
+First, temporal unlinkability: shares are submitted independently at
+client-chosen times spread across the voting window, so that an
+observer cannot attribute all shares to a single voter by timing
+correlation. Second, limiting the election authority's view: if the EA
+decrypts an individual ciphertext, it sees one share rather than a
+voter's complete ballot allocation.
+
+Both purposes are weaker than they appear, and the ZIP should be read
+with that in mind.
+
+Temporal unlinkability is defeated for submission servers regardless of
+timing, because the Share Submission Payload carries values common to
+all $N_s$ shares of one vote (see [Share Submission Payload]). Timing
+measures apply only to observers that see the on-chain reveals and not
+the payloads.
+
+Limiting the EA's view depends entirely on the decomposition strategy.
+Under an even split, one decrypted share determines the total to within
+$N_s$ ballots, so the EA's view of one share is equivalent to its view
+of the whole ballot count. The requirement in [Vote Share] exists to
+prevent this; even so, the reduction is quantitative, not absolute (see
+[Why Randomized Share Decomposition]).
 
 When a voter casts near the end of the voting window, the protocol
 falls back to single-share mode: the full ballot count is placed in one
@@ -1452,6 +1520,42 @@ construct a computationally expensive Vote Reveal Proof, and with
 insufficient time remaining the server may not complete all $N_s$
 proofs before the deadline. See [^submission-server] for the
 last-moment buffer definition and timing details.
+
+## Why Randomized Share Decomposition
+
+[Vote Share] requires that share values not be a deterministic function
+of $\mathsf{num}\_\mathsf{ballots}$. The reason is that additive
+splitting leaks the total to anyone who can decrypt a part of it, and
+the size of that leak is set entirely by how the split is chosen.
+
+Under an even split — floor division with the remainder placed in the
+last share — every share except the last equals
+$\lfloor \mathsf{num}\_\mathsf{ballots} / N_s \rfloor$. Decrypting any
+one of them determines the ballot count to within $N_s$ ballots, which
+at $N_s = 16$ is 2 ZEC. Under such a scheme vote splitting provides
+essentially no balance hiding against a party that can decrypt a single
+share, and the protection claimed in [Privacy Implications] would rest
+on the threshold assumption alone.
+
+The default decomposition in [Vote Share] samples a uniformly random
+composition of $\mathsf{num}\_\mathsf{ballots}$ into $N_s$ parts. A
+single share is then distributed over a wide range rather than
+concentrated at the mean, so decrypting one share bounds the total far
+more loosely.
+
+This is a mitigation, not a solution, and the ZIP should not be read as
+claiming more. Any additive decomposition into a fixed number of parts
+leaks information about the sum: the expected value of a share is
+$\mathsf{num}\_\mathsf{ballots} / N_s$ under any scheme, so an adversary
+decrypting several shares of one vote recovers the total with accuracy
+improving in the number of shares it holds. Randomization raises the
+number of shares an adversary needs; it does not make any number
+sufficient.
+
+Closing the leak entirely requires that no party be able to decrypt an
+individual share at all — that the encryption admit opening only of
+aggregates. That is a change to the encryption layer rather than to the
+decomposition, and it is recorded in [Open issues].
 
 ## Why Blinded Share Commitments
 
@@ -1488,18 +1592,33 @@ Vote Proof circuit; extracting parity bits in-circuit would require a
 255-bit field decomposition gadget, adding substantial constraint cost
 for no security benefit.
 
-## Why Per-Server Share Isolation
+## Why Other Shares' Ciphertexts Are Withheld
 
 Each submission server receives only the ciphertext and blind factor
 for the single share it reveals, plus the blinded share commitments
 for all $N_s$ shares. It does not receive the raw ciphertexts or blind
-factors of shares assigned to other servers. This limits the data any
-single server can observe: even a compromised server learns only one
-share's plaintext-encrypted ciphertext and blind, not the full set.
-The blinded share commitments are sufficient for the server to
-recompute $\mathsf{shares}\_\mathsf{hash}$ in the proof (condition 3),
-while the blinding prevents the server from correlating other shares'
+factors of shares assigned to other servers. The blinded share
+commitments are sufficient for the server to recompute
+$\mathsf{shares}\_\mathsf{hash}$ in the proof (condition 3), while the
+blinding prevents the server from correlating other shares'
 ciphertexts with their commitments.
+
+This section was previously titled "Why Per-Server Share Isolation",
+which overstated the property. What is withheld is the *ciphertext and
+blind factor* of other shares. What is not withheld is the identity of
+the vote: $\mathsf{vc}$, the VCT position, and
+$\mathsf{shares}\_\mathsf{hash}$ appear in every payload of a vote, so
+a server holding two payloads knows they belong to one voter. Nor is
+the property per-server in any useful sense once a server receives more
+than one of a voter's shares, which the server selection rule in
+[^submission-server] makes the common case rather than the exception.
+
+Note also the interaction with [Why Blinded Share Commitments]: the
+blind factors exist to stop an observer linking revealed shares back to
+a specific vote commitment by recomputing
+$\mathsf{shares}\_\mathsf{hash}$ from on-chain ciphertexts. That defence
+holds against a passive chain observer and is bypassed for submission
+servers, which are given $\mathsf{vc}$ directly in the payload.
 
 ## Why Server-Delegated Share Reveal
 
@@ -1668,6 +1787,22 @@ construction.
   to track VCT paths (e.g., full server-side path retrieval), this
   tradeoff should be revisited.
   See [Why a Send-Based VAN Model].
+- The election authority key opens individual share ciphertexts as
+  readily as it opens the aggregate, so the requirement that individual
+  vote amounts never be revealed (see [Requirements]) is not met by this
+  design. Satisfying it requires an encryption layer that admits opening
+  of aggregates only, so that no threshold of key holders can decrypt a
+  single voter's share. Randomized share decomposition (see
+  [Why Randomized Share Decomposition]) reduces the resulting exposure
+  but cannot remove it. This is a change to the encryption layer and is
+  not addressed in this ZIP.
+- Encrypted shares are recorded on the vote chain permanently, and the
+  El Gamal layer is not post-quantum. The plaintext is a voter's
+  shielded balance at the snapshot, which does not become less sensitive
+  with time. [Non-requirements] places post-quantum security out of
+  scope; that exclusion should be revisited, because the combination of
+  a permanent public record and a non-post-quantum encryption layer
+  means the exposure above has no expiry.
 - Open issues related to the EA key ceremony are tracked in [^ea-ceremony].
 - Open issues related to the submission server (share decomposition
   strategy, client confirmation via PIR, balance amendment, decision
