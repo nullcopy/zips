@@ -2293,17 +2293,17 @@ the implementation.
 
 [^poseidon]: [Poseidon: A New Hash Function for Zero-Knowledge Proof Systems](https://eprint.iacr.org/2019/458)
 
-[^balance-proof]: [Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof)
+[^balance-proof]: [Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
 
-[^pir-governance]: [Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir)
+[^pir-governance]: [Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
-[^ea-ceremony]: [Election Authority Key Ceremony](draft-valargroup-ea-key-ceremony)
+[^ea-ceremony]: [Election Authority Key Ceremony](draft-valargroup-ea-key-ceremony.md)
 
-[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
+[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config.md)
 
-[^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318)
+[^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318.md)
 
-[^voting-setup]: [Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup)
+[^voting-setup]: [Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup.md)
 
 
 [^halo2]: [S. Bowe, J. Grigg, and D. Hopwood, "Recursive Proof Composition without a Trusted Setup", 2019](https://eprint.iacr.org/2019/1021)
@@ -2316,7 +2316,7 @@ the implementation.
 
 [^protocol-pallasandvesta]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1]. Section 5.4.9.6: Pallas and Vesta](protocol/protocol.pdf#pallasandvesta)
 
-[^zip-244]: [ZIP 244: Transaction Identifier and Signature Validation for v5 Transactions](zip-0244)
+[^zip-244]: [ZIP 244: Transaction Identifier and Signature Validation for v5 Transactions](zip-0244.rst)
 
 [^pczt]: [zcash/zips issue #693: Standardize a protocol for creating shielded transactions offline (PCZT)](https://github.com/zcash/zips/issues/693)
 
