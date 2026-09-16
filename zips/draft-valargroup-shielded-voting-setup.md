@@ -57,8 +57,9 @@ Bonded validator
 Submission server
 : An untrusted service that accepts encrypted vote share payloads
   from voters and submits the corresponding share reveal
-  transactions to the vote chain. Specified in
-  `draft-valargroup-submission-server` [^draft-submission-server].
+  transactions to the vote chain. Share distribution, submission
+  scheduling and the payload format are specified in
+  `draft-valargroup-voting-protocol` [^draft-voting-protocol].
 
 Election Authority (EA)
 : A virtual signing key, jointly constructed by validators during a key
@@ -243,13 +244,17 @@ delegation, vote, and share reveal. The proof circuits are specified in
 A complete deployment consists of:
 
 - **Vote chain nodes** — one or more `svoted` instances running CometBFT
-  consensus. Each `svoted` binary additionally includes the
-  **submission server** (an untrusted service that accepts vote
-  share payloads from clients and submits the corresponding share
-  reveal transactions at client-specified times). The submission
-  server shares the node's process but is functionally decoupled
-  from chain consensus; see `draft-valargroup-submission-server`
-  [^draft-submission-server].
+  consensus.
+- **Submission servers** — untrusted services that accept vote share
+  payloads from clients that cannot construct proofs locally, and
+  submit the corresponding share reveal transactions on their behalf.
+  These MUST be operated separately from the vote chain nodes and from
+  the election authority key-share holders, and MUST NOT run in the
+  `svoted` process; see [Validator] and [Why Roles Are Separated].
+  Earlier deployments bundled the submission server into the `svoted`
+  binary. Share distribution, submission scheduling and the payload
+  format are specified in `draft-valargroup-voting-protocol`
+  [^draft-voting-protocol].
 - **Nullifier service** — a PIR server that provides private nullifier
   exclusion proofs to voters (see [Nullifier Service]).
 - **Vote configuration document** — a per-round document published
@@ -564,10 +569,13 @@ The round enters the **PENDING** state. The EA key ceremony (see
 automatically. On successful completion, the
 round transitions to **ACTIVE**, the voting window opens, and the
 transition timestamp is recorded as `ceremony_phase_start`. Clients use
-`ceremony_phase_start` together with `vote_end_time` to compute the
-last-moment buffer for submission timing, as specified in the
-"Last-Moment Buffer" section of `draft-valargroup-submission-server`
-[^draft-submission-server-lmb].
+`ceremony_phase_start` together with `vote_end_time` to construct their
+share submission schedule, as specified in the "Submission Timing"
+section of `draft-valargroup-voting-protocol` [^draft-voting-protocol].
+There is no last-moment buffer: the single-share mode that earlier
+drafts defined for the end of the voting window has been removed, and a
+client near the deadline compresses its schedule rather than
+concentrating its weight.
 
 ### Round Lifecycle
 
@@ -644,10 +652,9 @@ For each proposal the coinholder votes on, the wallet performs:
 4. **Submit encrypted vote shares.** Send the share payloads to
    submission server endpoints, which queue them and submit
    share reveal transactions on the coinholder's behalf at
-   client-specified times. Share decomposition, server selection,
-   and the last-moment buffer rules are specified in
-   `draft-valargroup-submission-server`
-   [^draft-submission-server].
+   client-specified times. Share decomposition, server selection and
+   submission scheduling are specified in
+   `draft-valargroup-voting-protocol` [^draft-voting-protocol].
 
 After `vote_end_time`, the coinholder may verify the final tally
 following [Verification and Auditing].
@@ -675,6 +682,12 @@ it cannot manufacture it.
 **What this means for a result.** A published result is a lower bound
 on the support each option received, not a measurement of it. Results
 SHOULD be described in those terms.
+
+Separately from what validators can do, whether a result may be
+described as representative of coinholder sentiment depends on
+conditions on the round itself, including the availability of
+independent conforming wallet implementations for its duration. Those
+conditions are specified in [^draft-poll-config].
 
 **Detection.** Exclusion is detectable but not provable from chain
 state alone. An excluded transaction leaves no record on the chain that
@@ -907,13 +920,11 @@ disclosed property of that deployment rather than an unstated one.
 
 [^draft-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
-[^draft-submission-server]: [Draft ZIP: Vote Share Submission Server](draft-valargroup-submission-server.md)
 
 [^draft-poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
 
 [^draft-wallet-api]: [Draft ZIP: Shielded Voting Wallet API](draft-valargroup-shielded-voting-wallet-api.md)
 
-[^draft-submission-server-lmb]: [Draft ZIP: Vote Share Submission Server, Section: Last-Moment Buffer](draft-valargroup-submission-server.md#last-moment-buffer)
 
 [^draft-onchain-voting]: [Draft ZIP: On-chain Accountable Voting](draft-ecc-onchain-accountable-voting.md)
 
