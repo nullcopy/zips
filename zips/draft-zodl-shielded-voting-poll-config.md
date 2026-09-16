@@ -106,6 +106,9 @@ without redesign.
 - A snapshot is anchored to a specific Zcash block, not only to a
   height, so that a chain reorganisation affecting the snapshot is
   detectable.
+- The decryption threshold in use for a round, and the period over which
+  key shares are retained, are published, since both bound the
+  amount-privacy claims made elsewhere in the protocol.
 
 
 # Non-requirements
@@ -340,6 +343,68 @@ full node under its own control, and obtained values matching
 An administrator MUST NOT treat agreement with another party's copy of
 the configuration as satisfying this obligation.
 
+## Election Authority Key
+
+$\mathsf{ea}\_\mathsf{pk}$ is a per-round value: a new election authority
+key is generated for each round, and it appears in the round
+configuration. This document specifies the round-facing properties of
+that key. The cryptographic construction — El Gamal on Pallas, the
+Shamir sharing, the DLEQ proofs used at tally, and the ceremony message
+flow — is specified separately in [^ea-ceremony].
+
+### Threshold
+
+The decryption threshold $t$ is the number of key-share holders that
+must cooperate to decrypt. It determines the strength of every
+amount-privacy claim in [^voting-protocol], since any $t$ holders can
+decrypt an individual share as readily as the aggregate.
+
+A deployment MUST publish the value of $t$ and the number of key-share
+holders $n$ in use for a round, and these MUST match the values the
+ceremony actually used. Specifications and deployments have differed on
+this value; publishing it per round makes a divergence visible rather
+than latent.
+
+### Share Generation
+
+A ceremony that generates the key at a single party and distributes
+shares from it — a trusted dealer — MUST be treated as giving that
+party the full election authority secret key for the duration of the
+ceremony. The claim that no single party holds
+$\mathsf{ea}\_\mathsf{sk}$ holds only after the ceremony completes, and
+only if the dealer destroyed its copy, which no other party can verify.
+
+A deployment using a trusted dealer MUST disclose this in the round
+configuration or accompanying documentation, MUST identify the party
+acting as dealer, and SHOULD adopt distributed key generation or
+publish verifiable secret sharing commitments, so that share holders
+can confirm their shares are consistent with $\mathsf{ea}\_\mathsf{pk}$
+without trusting the dealer.
+
+### Key Retention
+
+Key shares MUST NOT be retained indefinitely.
+
+Each share holder MUST destroy its share of $\mathsf{ea}\_\mathsf{sk}$
+once the round is finalised and the tally published. A deployment MUST
+publish the retention period it applies and the point at which
+destruction occurs.
+
+Retaining shares for possible future retally or audit is not a
+sufficient reason to keep them. The encrypted shares of every
+individual vote remain on the vote chain permanently, and the
+encryption is not post-quantum. A retained key share is therefore not a
+dormant convenience: it is a live capability, held indefinitely,
+against a permanent public record of individual voters' balances. The
+audit properties retention is intended to preserve are available
+without it, because the partial decryptions and their DLEQ proofs are
+published on chain and can be re-verified at any time without
+re-deriving the key.
+
+Where a deployment concludes that retention is nonetheless required, it
+MUST state for how long, and MUST treat that period as the period over
+which its amount-privacy claims hold — not the duration of the round.
+
 ## Verification
 
 A round is **well-formed** if a verifier, using only a Zcash full node
@@ -422,9 +487,12 @@ response, rather than a silent change in the eligible note set.
 
 - Consensus validation of the snapshot roots by the vote chain, as
   discussed in [Why Not Consensus Validation].
-- The Electoral Authority key ceremony, previously drafted separately,
-  is expected to be incorporated into this document, since
-  $\mathsf{ea}\_\mathsf{pk}$ is a per-round configuration value.
+- The election authority key ceremony is specified separately in
+  [^ea-ceremony], which is not currently an open proposal. The
+  round-facing requirements in [Election Authority Key] depend on it, so
+  it needs to be revived and completed. In particular the trusted dealer
+  construction, and the recommendation there that shares be retained
+  indefinitely, should be revisited.
 - $\mathsf{NF}(H)$ is defined over Orchard nullifiers only, matching the
   current protocol's restriction to the Orchard pool. Extension to
   other pools would require a corresponding extension here.
@@ -445,3 +513,5 @@ response, rather than a silent change in the eligible note set.
 [^voting-setup]: [Draft ZIP: Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup)
 
 [^pir-governance]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir)
+
+[^ea-ceremony]: [Draft ZIP: Election Authority Key Ceremony](draft-valargroup-ea-key-ceremony)
