@@ -668,6 +668,18 @@ authorization signature $\sigma$ MUST perform the following checks:
 4. Verify that $\mathsf{rt^{excl}}$ corresponds to the nullifier
    non-membership tree root at the declared snapshot height.
 
+   Checks 3 and 4 require deriving both roots from consensus chain
+   state at the declared height, as required by [Pool Snapshot]. A
+   verifier MUST NOT treat them as satisfied by having received the
+   roots from a configuration document, a service, or another party,
+   however that document or party is authenticated. Authentication
+   establishes who supplied a value, not that the value is correct.
+
+   An application that cannot perform these checks is not verifying the
+   claim; it is trusting whoever supplied the roots. Applications MUST
+   state which of the two they do. For the shielded voting application,
+   the derivation procedure is specified in [^poll-config].
+
 5. Verify that $\mathsf{dom}$ is valid for the current application
    instance.
 
@@ -1115,6 +1127,8 @@ batching for $N_ {\max} = 5$) is available at
 [^protocol]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1] or later](protocol/protocol.pdf)
 
 [^protocol-orchardcommitmenttree]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1]. Section 3.1: Note Commitment Trees](protocol/protocol.pdf#merkletree)
+
+[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
 
 [^protocol-actionstatement]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1]. Section 4.17.4: Action Statement (Orchard)](protocol/protocol.pdf#actionstatement)
 
