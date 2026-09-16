@@ -242,7 +242,10 @@ The following are explicitly out of scope for this ZIP:
 
 - Incremental database updates. The PIR database is computed once from
   the nullifier set at a given snapshot height and is treated
-  as static for the duration of the Protocol Epoch.
+  as static for the duration of the Protocol Epoch. This does not
+  exempt the ingest pipeline that produces the set from handling chain
+  reorganisations before the snapshot height is reached; see
+  [Tree Construction].
 - Sub-second end-to-end query latency. The two sequential PIR round-trips
   impose a latency floor determined by network conditions.
 - Retrieval of data other than nullifier exclusion proofs.
@@ -360,6 +363,33 @@ The tree is built from the set of all Orchard nullifiers revealed on the
 consensus chain as of the snapshot height. The construction follows the
 algorithm defined in [^draft-valargroup-orchard-balance-proof],
 summarized here for the aspects relevant to the PIR data layout.
+
+**Source of the set.** The completeness of this set is a soundness
+requirement, not a data-quality concern. A holder of a note spent at or
+before the snapshot height can, if the corresponding nullifier is
+missing from the set, obtain a valid exclusion proof for it and use it
+as though the note were unspent. For an application that uses these
+proofs to establish eligibility, an omission is a double-spend against
+that application's accounting.
+
+An operator building this tree MUST derive the nullifier set from its
+own view of the consensus chain, and MUST NOT accept the set, or a root
+committing to it, from another party. Where an application specifies a
+derivation procedure for the set — as the shielded voting application
+does in [^poll-config] — the operator MUST follow it, and MUST publish
+the root it derives so that disagreement between operators is visible.
+
+**Chain reorganisation.** An ingest pipeline that processes blocks
+incrementally MUST track the block hash of each ingested block, not only
+its height, and on detecting that a previously ingested block is no
+longer on the best chain MUST discard all state derived from that block
+and every block after it and re-ingest from the last common ancestor. It
+MUST NOT publish a tree for a snapshot height until it has confirmed
+that the block it ingested at that height is on the current best chain.
+
+A pipeline without this property can produce a set that omits
+nullifiers from blocks that replaced reorganised ones, which is the
+omission described above arising without any party intending it.
 
 **Step 1: Sentinel initialization.** Before processing real nullifiers,
 the builder MUST insert sentinel values into the sorted set:
@@ -3227,5 +3257,7 @@ three-tier Poseidon tree, the Tier 1 / Tier 2 query orchestration described in t
 [^draft-str4d-orchard-balance-proof]: [Air drops, Proof-of-Balance, and Stake-weighted Polling](draft-str4d-orchard-balance-proof)
 
 [^draft-valargroup-orchard-balance-proof]: [Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof)
+
+[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
 
 [^draft-voting-protocol]: [Draft ZIP: Zcash Shielded Voting Protocol](draft-valargroup-voting-protocol.md)
