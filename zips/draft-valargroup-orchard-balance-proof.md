@@ -1128,7 +1128,7 @@ batching for $N_ {\max} = 5$) is available at
 
 [^protocol-orchardcommitmenttree]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1]. Section 3.1: Note Commitment Trees](protocol/protocol.pdf#merkletree)
 
-[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
+[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config.md)
 
 [^protocol-actionstatement]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1]. Section 4.17.4: Action Statement (Orchard)](protocol/protocol.pdf#actionstatement)
 
