@@ -59,7 +59,7 @@ Submission server
   from voters and submits the corresponding share reveal
   transactions to the vote chain. Share distribution, submission
   scheduling and the payload format are specified in
-  `draft-valargroup-voting-protocol` [^draft-voting-protocol].
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Election Authority (EA)
 : A virtual signing key, jointly constructed by validators during a key
@@ -194,7 +194,7 @@ A **decision** is a voter's chosen option for a specific proposal,
 represented as the option's 0-indexed position within that proposal's
 option list. Decisions are recorded in the encrypted share
 accumulator, keyed by `(proposal_id, vote_decision)`; see
-`draft-valargroup-voting-protocol` [^draft-voting-protocol] for the
+`draft-valargroup-shielded-voting` [^draft-voting-protocol] for the
 cryptographic construction.
 
 ### Kinds of polls that can be expressed
@@ -237,7 +237,7 @@ The vote chain stores:
 
 The vote chain verifies a zero-knowledge proof for each transaction type:
 delegation, vote, and share reveal. The proof circuits are specified in
-`draft-valargroup-voting-protocol` [^draft-voting-protocol].
+`draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 ## Deployment Architecture
 
@@ -253,7 +253,7 @@ A complete deployment consists of:
   `svoted` process; see [Validator] and [Why Roles Are Separated].
   Earlier deployments bundled the submission server into the `svoted`
   binary. Share distribution, submission scheduling and the payload
-  format are specified in `draft-valargroup-voting-protocol`
+  format are specified in `draft-valargroup-shielded-voting`
   [^draft-voting-protocol].
 - **Nullifier service** — a PIR server that provides private nullifier
   exclusion proofs to voters (see [Nullifier Service]).
@@ -571,7 +571,7 @@ round transitions to **ACTIVE**, the voting window opens, and the
 transition timestamp is recorded as `ceremony_phase_start`. Clients use
 `ceremony_phase_start` together with `vote_end_time` to construct their
 share submission schedule, as specified in the "Submission Timing"
-section of `draft-valargroup-voting-protocol` [^draft-voting-protocol].
+section of `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 There is no last-moment buffer: the single-share mode that earlier
 drafts defined for the end of the voting window has been removed, and a
 client near the deadline compresses its schedule rather than
@@ -581,7 +581,7 @@ concentrating its weight.
 
 1. **PENDING**: round created, awaiting EA key ceremony.
 2. **ACTIVE**: ceremony complete, voting window open. Voters may delegate,
-   vote, and submit shares (see `draft-valargroup-voting-protocol`
+   vote, and submit shares (see `draft-valargroup-shielded-voting`
    [^draft-voting-protocol]).
 3. **TALLYING**: `vote_end_time` has passed. Validators submit
    partial decryptions, the chain combines them, and tally
@@ -654,7 +654,7 @@ For each proposal the coinholder votes on, the wallet performs:
    share reveal transactions on the coinholder's behalf at
    client-specified times. Share decomposition, server selection and
    submission scheduling are specified in
-   `draft-valargroup-voting-protocol` [^draft-voting-protocol].
+   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 After `vote_end_time`, the coinholder may verify the final tally
 following [Verification and Auditing].
@@ -921,7 +921,7 @@ disclosed property of that deployment rather than an unstated one.
 [^draft-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
 
-[^draft-poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
+[^draft-poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config.md)
 
 [^draft-wallet-api]: [Draft ZIP: Shielded Voting Wallet API](draft-valargroup-shielded-voting-wallet-api.md)
 
