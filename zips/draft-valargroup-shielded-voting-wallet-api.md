@@ -990,13 +990,13 @@ is available at
 
 [^rfc4648]: [RFC 4648: The Base16, Base32, and Base64 Data Encodings](https://www.rfc-editor.org/rfc/rfc4648)
 
-[^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318)
+[^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318.md)
 
 [^voting-protocol]: [Draft ZIP: Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
 
 [^nullifier-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
-[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
+[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config.md)
 
 
 [^orchard-balance-proof]: [Draft ZIP: Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
