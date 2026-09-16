@@ -200,7 +200,7 @@ plaintext amounts. They can, however, determine that two shares belong
 to the same vote: the Share Submission Payload carries
 $\mathsf{vc}$, the VCT position, and
 $\mathsf{shares}\_\mathsf{hash}$, each of which is identical across all
-$N_s$ payloads of one vote (see [Share Submission Payload]). A server
+$N_s$ payloads of one vote (see [Server-Assisted Submission]). A server
 that receives two or more of a voter's shares can group them from the
 payload contents alone, without timing analysis.
 
@@ -1257,10 +1257,40 @@ A share reveal transaction submitted to the vote chain MUST contain:
 Note: the Vote Reveal Proof has no spend authorization signature
 because it is constructed by the submission server, not the voter.
 
-### Share Submission Payload
+### Share Submission
 
-The voter sends each share to a submission server as an off-chain
-payload. For share $i$, the payload MUST contain:
+A share reaches the vote chain by one of two paths. **Direct submission
+is the default and RECOMMENDED path.** Server-assisted submission is an
+optional profile for clients that cannot construct proofs locally, and
+carries a privacy cost stated below.
+
+#### Direct Submission
+
+A client that can construct a Vote Reveal Proof MUST be permitted to
+submit share reveal transactions itself, without sending any payload to
+a third party. In this path the client:
+
+1. Constructs the Vote Reveal Proof for each share $i$, per
+   [Vote Reveal Proof].
+2. Submits each resulting Share Reveal Message to the vote chain
+   directly, at a time of its choosing.
+
+No party other than the client learns $\mathsf{vc}$, the VCT position,
+$\mathsf{shares}\_\mathsf{hash}$, or the association between any two
+shares. The correlation channel described under
+[Server-Assisted Submission] does not arise.
+
+Clients SHOULD submit each share over an independent network path — for
+example, a separate Tor circuit per share — and SHOULD independently
+sample each share's submission time.
+See [Why Content Linkage Precedes Timing] for why these measures are
+effective on this path and not on the other.
+
+#### Server-Assisted Submission
+
+A client that cannot construct proofs locally MAY delegate proof
+construction and submission to a submission server. For share $i$, the
+payload sent to the server MUST contain:
 
 | Field | Description |
 |---|---|
@@ -1284,9 +1314,29 @@ share commitments, which do not expose the ciphertexts or blind
 factors of the other shares (see
 [Why Other Shares' Ciphertexts Are Withheld]).
 
-Voters MUST distribute shares across multiple independent servers to
-further limit any single server's view of their voting activity.
-Server selection, temporal mixing, and communication protocols are
+**Privacy cost of this path.** Three fields of this payload —
+$\mathsf{vc}$, the VCT position, and $\mathsf{shares}\_\mathsf{hash}$ —
+take the same value in all $N_s$ payloads of one vote. A server that
+receives two or more of a voter's payloads can therefore group them
+with certainty, from the payload contents alone. The full array of
+$N_s$ blinded share commitments is a fourth such value. These fields
+are required for the server to construct the proof on the voter's
+behalf, so the correlation is inherent to delegating proof
+construction in this form, not an artifact of the encoding.
+
+A client using this path MUST be informed that the servers it selects
+learn which shares belong to the same vote, and learn that vote's
+$\mathsf{proposal}\_\mathsf{id}$ and
+$\mathsf{vote}\_\mathsf{decision}$.
+
+Implementations MUST NOT present randomized submission delays or
+per-share network isolation as mitigating this correlation. They do
+not: the correlating values travel in the payload regardless of when or
+over what path it is sent. See
+[Why Content Linkage Precedes Timing].
+
+Voters using this path SHOULD distribute shares across multiple
+independent servers. Server selection and communication protocols are
 specified in [^submission-server].
 
 
@@ -1501,7 +1551,7 @@ with that in mind.
 
 Temporal unlinkability is defeated for submission servers regardless of
 timing, because the Share Submission Payload carries values common to
-all $N_s$ shares of one vote (see [Share Submission Payload]). Timing
+all $N_s$ shares of one vote (see [Server-Assisted Submission]). Timing
 measures apply only to observers that see the on-chain reveals and not
 the payloads.
 
@@ -1620,14 +1670,63 @@ $\mathsf{shares}\_\mathsf{hash}$ from on-chain ciphertexts. That defence
 holds against a passive chain observer and is bypassed for submission
 servers, which are given $\mathsf{vc}$ directly in the payload.
 
-## Why Server-Delegated Share Reveal
+## Why Server-Assisted Submission Is Optional
 
-The Vote Reveal Proof is constructed by the submission server
-rather than the voter's client for two reasons: mobile devices are
-unreliable for background ZKP computation, and server-side construction
-enables temporal mixing of shares from many voters. The trust
-requirement on the server is minimal: it learns encrypted shares and
-vote decisions but cannot decrypt amounts or link shares to identities.
+Earlier revisions of this ZIP made server-constructed Vote Reveal
+Proofs the only specified submission path, on two grounds: that mobile
+devices are unreliable for background ZKP computation, and that
+server-side construction enables temporal mixing of shares from many
+voters. Neither ground supports making it the default.
+
+On cost: Vote Reveal Proof construction has been measured at
+approximately 38 ms per proof. At $N_s = 16$ that is under a second of
+client work for a complete vote. This is well within the budget of a
+mobile client performing a foreground, user-initiated action, and it is
+small beside the delegation and vote proofs the client already
+constructs.
+
+On temporal mixing: mixing operates on submission times, and the
+correlation it is meant to defeat is already available to the server
+from the payload contents before any mixing occurs (see
+[Server-Assisted Submission]). A defence applied after the adversary
+has already succeeded does not help.
+
+The trust requirement on the server is therefore not minimal. A server
+learns which shares belong to one vote, and that vote's proposal and
+decision. Where submission servers are operated by the same parties
+that hold shares of $\mathsf{ea}\_\mathsf{sk}$, the party able to group
+a voter's shares is also a party able to decrypt them.
+
+Server-assisted submission is retained because some clients genuinely
+cannot construct proofs, and a voter who would otherwise be unable to
+vote is better served by a path with a disclosed privacy cost than by
+no path. It is specified as optional, with that cost stated, rather
+than as the default.
+
+## Why Content Linkage Precedes Timing
+
+Three defences appear in this protocol and its companion documents:
+randomized submission timing, distribution of shares across multiple
+servers, and per-share network isolation. Each addresses an adversary
+that must infer which shares belong together.
+
+None of them applies to an adversary that is *told* which shares belong
+together. A submission server receiving two payloads bearing the same
+$\mathsf{vc}$ does not infer the association; it reads it.
+
+The ordering follows: content linkage must be removed before timing and
+network measures have anything to protect. On the direct submission
+path no payload exists, so those measures apply to the on-chain
+footprint and are effective. On the server-assisted path they are not,
+and MUST NOT be described as though they were.
+
+This ordering also determines what future work is useful. Shortening
+delays, adding servers, or adding network isolation to the
+server-assisted path will not change its privacy properties. Removing
+the correlating fields from the payload would, and requires either
+per-share re-randomisation of the values the proof depends on or a
+blinded proof-construction protocol. Neither is specified here; see
+[Open issues].
 
 ## Why Reusing VAN Address and Randomness
 
@@ -1803,6 +1902,15 @@ construction.
   scope; that exclusion should be revisited, because the combination of
   a permanent public record and a non-post-quantum encryption layer
   means the exposure above has no expiry.
+- On the server-assisted submission path, the payload necessarily carries
+  values common to all $N_s$ shares of one vote, so any server receiving
+  two of a voter's payloads can group them. Removing this correlation
+  while retaining server-constructed proofs requires either per-share
+  re-randomisation of the values the Vote Reveal Proof depends on, or a
+  protocol in which the server constructs the proof without learning
+  them. Neither is specified. Until one is, the privacy properties of
+  the two submission paths differ materially and clients should prefer
+  [Direct Submission].
 - Open issues related to the EA key ceremony are tracked in [^ea-ceremony].
 - Open issues related to the submission server (share decomposition
   strategy, client confirmation via PIR, balance amendment, decision
