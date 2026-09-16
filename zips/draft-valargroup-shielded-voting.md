@@ -209,7 +209,7 @@ that they avoid leaking timing metadata, but that they do not correlate
 payloads, and that they do not combine that correlation with the
 ability to decrypt. Randomized delays and multiple servers do not
 address the correlation channel, because the correlating values are
-carried in the payload itself. See [^submission-server].
+carried in the payload itself.
 
 **Non-membership tree queries.** Obtaining exclusion proofs for the
 nullifier non-membership tree during delegation requires querying a data
@@ -249,6 +249,14 @@ see [^pir-governance].
 - The operational process for conducting a coinholder vote (validator
   setup, poll creation, deadlines) is out of scope; it is specified
   in [^voting-setup].
+- The operation of a submission server — its service interface,
+  duplicate handling, availability and fault tolerance, and the
+  relationship between server operators and vote chain validators — is
+  out of scope; it belongs with the vote chain's operational
+  specification. Note that this ZIP now specifies share **distribution**
+  (see [Server Selection]), because that rule determines whether this
+  ZIP's privacy claims hold and cannot be delegated to a document that
+  does not state them.
 - Post-quantum security of the El Gamal encryption layer is out of
   scope.
 - Privacy-preserving retrieval of nullifier non-membership proofs is
@@ -273,19 +281,17 @@ its VAN nullifier, and produces two new VCT leaves: a replacement VAN
 with the voted proposal's authority bit cleared, and a Vote Commitment
 containing $N_s$ El Gamal-encrypted shares of the voter's ballot count.
 
-**Phase 3: Share submission.** The voter sends each encrypted share as
-an independent payload to one or more submission
-servers [^submission-server]. Each payload includes a client-chosen
-$\mathsf{submit\_at}$ timestamp and the data necessary for the server
-to construct a Vote Reveal Proof. If the voter is casting near the end
-of the voting window (within the last-moment buffer defined
-in [^submission-server]), the voter places the full ballot count into a
-single share and requests immediate submission.
+**Phase 3: Share submission.** The voter submits each encrypted share
+independently. On the default path the voter constructs the Vote Reveal
+Proof for each share and submits it directly. A voter whose client
+cannot construct proofs may instead send each share as a payload to a
+submission server, which constructs the proof on the voter's behalf;
+that path discloses to the server which shares belong to the same vote,
+and is specified as optional for that reason.
 
-**Phase 4: Share reveal.** Each submission server constructs a Vote
-Reveal Proof (proving the share belongs to a valid VC in the VCT without
-revealing which one) and submits it to the vote chain at the
-client-specified time. The chain accumulates the revealed El Gamal
+**Phase 4: Share reveal.** Each Vote Reveal Proof (proving the share
+belongs to a valid VC in the VCT without revealing which one) is
+submitted to the vote chain. The chain accumulates the revealed El Gamal
 ciphertexts homomorphically.
 
 **Phase 5: Tally.** After the voting window closes, at least $t$
@@ -1303,7 +1309,7 @@ payload sent to the server MUST contain:
 | $\mathsf{enc}\_\mathsf{share}$ | El Gamal ciphertext $(C_1, C_2)$ for this share |
 | $\mathsf{blind}$ | Blind factor for this share |
 | $\mathsf{share}\_{\mathsf{comm}\_0} \ldots \mathsf{share}\_{\mathsf{comm}\_{N_s - 1}}$ | All $N_s$ blinded share commitments |
-| $\mathsf{submit\_at}$ | Unix timestamp (seconds) for when the server should submit the share reveal transaction. 0 means immediate (last-moment mode). See [^submission-server] |
+| $\mathsf{submit}\_\mathsf{at}$ | Unix timestamp (seconds) at which the server should submit the share reveal transaction; 0 means immediate. See [Submission Timing] |
 
 The server receives only the ciphertext and blind factor for the
 single share it is responsible for revealing. The remaining $N_s - 1$
@@ -1335,9 +1341,50 @@ not: the correlating values travel in the payload regardless of when or
 over what path it is sent. See
 [Why Content Linkage Precedes Timing].
 
-Voters using this path SHOULD distribute shares across multiple
-independent servers. Server selection and communication protocols are
-specified in [^submission-server].
+#### Server Selection
+
+Server selection for the server-assisted path is specified here rather
+than in a companion document, because the rule determines whether the
+privacy properties claimed elsewhere in this ZIP hold.
+
+Let $s$ be the number of available submission servers.
+
+1. A client MUST send each share to exactly one submission server on
+   first attempt.
+2. A client MUST NOT send more than
+   $\lceil N_s / s \rceil$ of one vote's shares to any single server.
+3. A client MUST select servers independently and uniformly at random
+   subject to constraints 1 and 2.
+4. If a share has not appeared on the vote chain within a
+   client-configured timeout, the client MAY resubmit it to a different
+   server, chosen subject to the same constraints. A client MUST NOT
+   resubmit a share to a server that has already received it.
+
+Earlier drafts of this protocol required each share to be sent to
+$\lceil s/2 \rceil$ servers, for censorship resistance through
+redundancy. That rule is replaced. See
+[Why One Server Per Share, Not Half the Fleet].
+
+#### Submission Timing
+
+On the direct submission path, a client SHOULD sample each share's
+submission time independently over the voting window.
+
+On the server-assisted path, a client MAY specify
+$\mathsf{submit}\_\mathsf{at}$ per share. Implementations MUST NOT
+represent this as a privacy measure against the receiving server; it
+affects only the on-chain footprint. See
+[Why Content Linkage Precedes Timing].
+
+There is no single-share submission mode. Earlier drafts specified that
+a voter casting within a final window place their entire ballot count
+into one share, submitted immediately, on the grounds that a server
+might not complete $N_s$ proofs before the deadline. A client MUST NOT
+do this: it concentrates the voter's entire weight into one ciphertext,
+so a single decryption recovers it exactly. A client with insufficient
+time remaining for server-assisted submission SHOULD submit directly
+instead, which requires under a second of proof construction. See
+[Why There Is No Single-Share Mode].
 
 
 ## Tally
@@ -1562,14 +1609,9 @@ of the whole ballot count. The requirement in [Vote Share] exists to
 prevent this; even so, the reduction is quantitative, not absolute (see
 [Why Randomized Share Decomposition]).
 
-When a voter casts near the end of the voting window, the protocol
-falls back to single-share mode: the full ballot count is placed in one
-share and submitted immediately. This sacrifices both benefits above but
-ensures the vote is counted — each share requires the server to
-construct a computationally expensive Vote Reveal Proof, and with
-insufficient time remaining the server may not complete all $N_s$
-proofs before the deadline. See [^submission-server] for the
-last-moment buffer definition and timing details.
+Earlier drafts specified a fallback in which a voter casting near the
+end of the voting window placed their full ballot count into a single
+share. That mode is removed; see [Why There Is No Single-Share Mode].
 
 ## Why Randomized Share Decomposition
 
@@ -1660,8 +1702,9 @@ the vote: $\mathsf{vc}$, the VCT position, and
 $\mathsf{shares}\_\mathsf{hash}$ appear in every payload of a vote, so
 a server holding two payloads knows they belong to one voter. Nor is
 the property per-server in any useful sense once a server receives more
-than one of a voter's shares, which the server selection rule in
-[^submission-server] makes the common case rather than the exception.
+than one of a voter's shares. The server selection rule in earlier
+drafts made that the common case rather than the exception; see
+[Why One Server Per Share, Not Half the Fleet].
 
 Note also the interaction with [Why Blinded Share Commitments]: the
 blind factors exist to stop an observer linking revealed shares back to
@@ -1702,6 +1745,116 @@ cannot construct proofs, and a voter who would otherwise be unable to
 vote is better served by a path with a disclosed privacy cost than by
 no path. It is specified as optional, with that cost stated, rather
 than as the default.
+
+## Why One Server Per Share, Not Half the Fleet
+
+Earlier drafts required each share to be sent to exactly
+$\lceil s/2 \rceil$ of the $s$ available servers, selected uniformly at
+random per share, and stated that this ensured a compromised server
+"learns at most one share's encrypted amount per vote commitment".
+
+That conclusion does not follow from that rule. The supporting analysis
+was per-share: limiting one share to half the servers does ensure that
+no more than half the server set sees that particular ciphertext. The
+property that matters is per-voter, and the two differ. With
+$N_s = 16$ shares each sent to $\lceil s/2 \rceil = 5$ of $s = 10$
+servers, there are 80 deliveries spread over 10 servers, so each server
+receives 8 of that voter's 16 shares in expectation. No selection
+strategy does better under the rule, because the rule fixes the total
+number of deliveries. A coalition of 6 servers pooling ordinary request
+logs holds every share of every voter, with certainty rather than
+probability.
+
+Combined with [Server-Assisted Submission], under which the payload
+itself identifies which shares belong together, the earlier rule meant
+that a single server ordinarily held enough of a voter's shares to
+reconstruct most of their ballot count, and that a modest coalition
+held all of it.
+
+The replacement rule inverts the tradeoff. Sending each share to one
+server minimises the number of parties that can group anything, and
+censorship resistance is recovered through client-side retry: a client
+that does not observe its share on chain resubmits to a different
+server. Redundancy is obtained sequentially, on demand, rather than
+prophylactically to half the fleet.
+
+This bounds exposure; it does not eliminate it. With $N_s = 16$ and
+$s = 10$, constraint 2 still permits two of a voter's shares to reach
+one server, and retries increase exposure further. A client that wants
+no server to be able to group its shares should use
+[Direct Submission].
+
+## Why There Is No Single-Share Mode
+
+Placing a voter's entire ballot count into a single share removes every
+protection this ZIP provides for vote amounts at once. One decryption
+recovers the exact figure — not an estimate bounded by a decomposition
+strategy, as in [Why Randomized Share Decomposition], but the value
+itself.
+
+The justification for accepting this was that a submission server might
+not complete $N_s$ Vote Reveal Proofs before the voting window closed,
+so a voter casting late would otherwise lose their vote. The constraint
+was on the server, not the client: proof construction is approximately
+38 ms, so a client can construct all 16 proofs in under a second at any
+point before the deadline.
+
+With [Direct Submission] specified, a late voter has a path that
+preserves both inclusion and amount privacy, and the tradeoff that
+motivated single-share mode no longer exists.
+
+Implementations should note that this mode's exposure was
+disproportionately borne by voters who waited — including those waiting
+deliberately to avoid influencing others — and that its on-chain
+indistinguishability, which earlier drafts cited, protects against a
+chain observer while the submission server can identify such a vote
+directly from the payload.
+
+## Why Not Encrypt Vote Decisions
+
+$\mathsf{vote}\_\mathsf{decision}$ is a public input to the Vote Reveal
+Proof and appears in cleartext in every share reveal transaction and in
+every server-assisted payload. Every submission server learns the
+decision of every voter whose shares it handles, and any chain observer
+learns the decision attached to each revealed share. No collusion or
+decryption is required for either.
+
+Encrypting decisions would close this, at substantial cost. A
+per-option ciphertext approach requires each share to carry $k$
+ciphertexts — $\mathrm{Enc}(v)$ for the chosen option and
+$\mathrm{Enc}(0)$ for the other $k-1$ — multiplying per-share circuit
+cost by $k$. A validator-decrypted variant hides per-option counts from
+the public but not from validators, and making the bucketing publicly
+verifiable requires an additional proof system scaling with total share
+count.
+
+Earlier drafts stated that the informativeness of public decisions was
+limited by non-uniform share decomposition. That mitigation was listed
+as an unadopted open question rather than specified, so it was not in
+effect. [Vote Share] now specifies a decomposition requirement, but its
+purpose is to bound what a decrypted share reveals about the voter's
+total, not to conceal the decision, which remains public.
+
+The consequence should be stated plainly rather than left implicit:
+this protocol does not provide ballot secrecy against submission
+servers or against anyone reading the vote chain. It provides amount
+privacy, subject to the limits described in [Privacy Implications].
+Whether that is acceptable is a question for the deployment, and it
+should be answered knowingly.
+
+## Why Not TEE-Based Proof Construction
+
+Running Vote Reveal Proof construction inside a Trusted Execution
+Environment would let a server handle decisions without observing them,
+providing censorship resistance without decision encryption's circuit
+cost. TEEs introduce infrastructure complexity, rely on vendor-specific
+trust assumptions, and are subject to side-channel attacks demonstrated
+against SGX and comparable platforms.
+
+With [Direct Submission] as the default path, the problem a TEE would
+solve is largely avoided rather than mitigated: a client that
+constructs its own proof discloses nothing to any server, without
+requiring hardware assumptions from the operator set.
 
 ## Why Content Linkage Precedes Timing
 
@@ -1912,9 +2065,19 @@ construction.
   the two submission paths differ materially and clients should prefer
   [Direct Submission].
 - Open issues related to the EA key ceremony are tracked in [^ea-ceremony].
-- Open issues related to the submission server (share decomposition
-  strategy, client confirmation via PIR, balance amendment, decision
-  encryption) are tracked in [^submission-server].
+- Voters have no privacy-preserving way to confirm that their shares
+  were included on the vote chain. A voter can observe the chain, but
+  querying it for their own share nullifiers reveals which nullifiers
+  are theirs. A PIR-based confirmation mechanism built on
+  [^pir-governance] would close this; adapting it for share nullifier
+  queries requires additional specification. Until then, a voter cannot
+  verify their own vote was counted, and omission of a share is not
+  detectable by the voter who cast it.
+- A voter who is the sole participant on an unpopular option may have
+  their exact balance revealed by the tally, since the aggregate for
+  that option equals their individual contribution. An opt-in mechanism
+  to amend the declared ballot count — lowering, rounding or padding it,
+  and proving the amendment in zero knowledge — would mitigate this.
 - Open issues related to the balance proof are tracked in [^balance-proof].
 
 
@@ -1940,7 +2103,6 @@ construction.
 
 [^voting-setup]: [Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup)
 
-[^submission-server]: [Vote Share Submission Server](draft-valargroup-submission-server)
 
 [^halo2]: [S. Bowe, J. Grigg, and D. Hopwood, "Recursive Proof Composition without a Trusted Setup", 2019](https://eprint.iacr.org/2019/1021)
 
