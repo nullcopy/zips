@@ -64,7 +64,7 @@ the encoding conventions for all exchanged data.
 The shielded voting protocol involves multiple ZIPs that specify the
 cryptographic circuits [^voting-protocol], nullifier retrieval
 [^nullifier-pir], proof-of-balance [^orchard-balance-proof], share
-submission [^submission-server], and election authority key ceremony
+submission [^voting-protocol], and election authority key ceremony
 [^ea-ceremony]. A wallet integrator currently must read several of these
 specifications to understand which endpoints to call, what wire formats
 to use, and how to discover an active vote.
@@ -104,7 +104,7 @@ component has no impact on other components or the configuration schema.
 - Chain consensus rules and block production.
 - Round creation and governance authority operations.
 - The internal implementation of helper servers (specified in
-[^submission-server]).
+[^voting-protocol]).
 
 # High level summary
 
@@ -137,7 +137,7 @@ See [Version Handling] for the normative rules.
 
 2. **Validate configuration.** Check all fields against the rules in
    [Validation Rules] and verify version compatibility per
-   [Compatibility Rules]. Reject the configuration and stop if any
+   [Version Handling]. Reject the configuration and stop if any
    check fails.
 
 3. **Fetch active round from chain.** Query `GET /shielded-vote/v1/rounds/active`
@@ -154,7 +154,8 @@ See [Version Handling] for the normative rules.
 5. **Retrieve nullifier exclusion proofs.** Connect to a
    `pir_endpoints` server and retrieve Merkle non-membership proofs
    for the wallet's Orchard note nullifiers at `snapshot_height`.
-   See [Nullifier Retrieval] and [^nullifier-pir].
+   See [Private Information Retrieval Nullifier Exclusion Proofs]
+   and [^nullifier-pir].
 
 6. **Construct and submit delegation transaction.** Build the ZKP1
    proof (proving Orchard note ownership at the snapshot height) and
@@ -190,7 +191,7 @@ See [Version Handling] for the normative rules.
     payloads and submit each to a helper server via
     `POST /shielded-vote/v1/shares`. Each share references the
     `tree_position` of the vote commitment leaf from step 11.
-    See [Share Submission] and [^submission-server].
+    See [Share Submission] and [^voting-protocol].
 
 13. **Poll share statuses.** For each submitted share, poll
     `GET /shielded-vote/v1/share-status/{roundId}/{nullifier}` until
@@ -776,13 +777,41 @@ before the vote is cast, rather than proceeding silently.
 
 ### Submission Timing
 
-A wallet MUST sample each share's submission time independently, and
-MUST NOT submit a vote's shares as a single batch.
+A wallet MUST construct a submission schedule as specified in
+[^voting-protocol], which adopts the scheduling discipline ZIP 318
+[^zip-0318] defines for pool-crossing transfers. In summary, and
+normatively by reference to that document, a wallet:
+
+- MUST shuffle the vote's shares into a uniformly random order before
+  assigning submission times, so that the order in which share values
+  are emitted does not depend on their magnitudes or their indices;
+- MUST draw each successive inter-submission delay independently from
+  an exponential distribution, so that its submissions approximate a
+  Poisson process, rather than spacing them evenly or by a fixed
+  interval;
+- MUST draw all such randomness from a cryptographically secure random
+  number generator;
+- MUST NOT submit a vote's shares as a single batch.
 
 A wallet MUST NOT place a voter's entire ballot count into a single
-share. Where insufficient time remains before `vote_end_time` for
-independently timed submission, a wallet SHOULD submit directly and
-promptly rather than concentrating the weight.
+share.
+
+**When the window is short.** Where insufficient time remains before
+`vote_end_time` to run the full schedule, a wallet MUST draw each
+remaining share's submission time independently and uniformly from the
+remaining interval, and MUST NOT submit the remaining shares together.
+Submitting promptly is not a substitute for submitting independently: a
+wallet that responds to a closing round by sending everything at once
+reproduces through timing precisely the exposure that removing
+single-share mode was intended to prevent.
+
+Where the remaining window is too short to submit all shares even under
+the compressed schedule, a wallet MUST inform the voter before
+proceeding rather than submitting silently.
+
+A wallet SHOULD present the voting deadline to the user early enough
+that this case is avoidable, since every option available once the
+window is short is worse than having started sooner.
 
 ### Partial Delegation
 
@@ -961,13 +990,14 @@ is available at
 
 [^rfc4648]: [RFC 4648: The Base16, Base32, and Base64 Data Encodings](https://www.rfc-editor.org/rfc/rfc4648)
 
+[^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318)
+
 [^voting-protocol]: [Draft ZIP: Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
 
 [^nullifier-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
 [^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
 
-[^submission-server]: [Draft ZIP: Shielded Voting Submission Server](draft-valargroup-submission-server.md)
 
 [^orchard-balance-proof]: [Draft ZIP: Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
 
