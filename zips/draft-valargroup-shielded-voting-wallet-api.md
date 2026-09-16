@@ -84,8 +84,16 @@ configuration document.
 - A wallet can submit delegation and vote commitment transactions
 using the wire formats in this specification. Proof construction is
 specified in companion ZIPs.
-- A wallet can submit encrypted vote shares to helper servers and
-confirm their on-chain inclusion.
+- A wallet can submit share reveal transactions directly, without
+disclosing to any third party which shares belong to the same vote.
+Submission via a helper server is available for wallets that cannot
+construct proofs locally.
+- A wallet can authenticate a configuration document, not merely check
+that it is well formed.
+- A voter can delegate part of their balance rather than all of it.
+- Network-level requirements needed for the protocol's privacy claims
+to hold at the client are stated normatively, not left to
+implementers.
 - Each protocol component (vote server, vote protocol, tally method,
 PIR) can be versioned and upgraded independently. A change to one
 component has no impact on other components or the configuration schema.
@@ -182,7 +190,7 @@ See [Version Handling] for the normative rules.
     payloads and submit each to a helper server via
     `POST /shielded-vote/v1/shares`. Each share references the
     `tree_position` of the vote commitment leaf from step 11.
-    See [Share Delegation] and [^submission-server].
+    See [Share Submission] and [^submission-server].
 
 13. **Poll share statuses.** For each submitted share, poll
     `GET /shielded-vote/v1/share-status/{roundId}/{nullifier}` until
@@ -260,7 +268,17 @@ participate in the round.
 
 ### Validation Rules
 
-A wallet MUST validate the configuration before use:
+The rules in this section are structural only: they establish that a
+configuration document is well formed, not that it is authentic. A
+document passing every check below may have been produced by anyone.
+
+A wallet MUST additionally authenticate the configuration as specified
+in [^poll-config], which defines the fields covered by administrator
+signatures and the signature threshold a wallet enforces. A wallet MUST
+NOT use a configuration that fails authentication, and MUST NOT treat
+the structural checks below as a substitute for it.
+
+A wallet MUST validate the structure of the configuration before use:
 
 - `config_version` MUST be a version the wallet recognizes. This
 specification defines version 1.
@@ -600,16 +618,33 @@ A JSON object with the following fields:
 
 Same response format as [Delegation Transaction].
 
-## Share Delegation
+## Share Submission
 
-After casting a vote commitment, the wallet constructs encrypted share
-payloads and submits them to helper servers. The helper server queues
-each share and submits it to the chain at the client-specified time.
-See [^submission-server] for the server-side processing pipeline and
-[^voting-protocol] for share construction.
+After casting a vote commitment, the wallet submits each encrypted
+share. Two paths exist, and they have materially different privacy
+properties.
+
+**Direct submission is the default.** A wallet that can construct Vote
+Reveal Proofs MUST submit share reveal transactions itself, using the
+chain transaction endpoints, and MUST NOT send share payloads to a
+helper server. Proof construction is approximately 38 ms per share, so
+a complete vote is under a second of work. On this path no third party
+learns which shares belong to the same vote.
+
+**Helper submission is a fallback** for wallets that cannot construct
+proofs locally. The payload a helper receives carries values common to
+all of a vote's shares, so any helper receiving two of them can group
+them. A wallet using this path MUST disclose to the user, before the
+vote is cast, that the helpers it selects will learn which shares
+belong to the same vote and which option that vote supports. See
+[^voting-protocol] for the payload contents and their consequences.
+
+A wallet MUST NOT present randomized submission delays or per-share
+network isolation to the user as mitigating this, because they do not:
+the correlating values travel in the payload regardless.
 
 The following endpoints are served from the same `vote_servers` base
-URLs as the chain query endpoints.
+URLs as the chain query endpoints, and apply to the helper path.
 
 ### Submit Share
 
@@ -709,6 +744,62 @@ specified in [^nullifier-pir]. The wallet connects to one of the
 `pir_endpoints` from the vote configuration; version selection
 follows the rules in [Version Handling].
 
+## Client Privacy Requirements
+
+The protocol's privacy claims depend on client behaviour that no
+server-side specification can enforce. This section states that
+behaviour normatively, so that a wallet's conformance is a checkable
+property rather than an implementation preference.
+
+### Network Isolation
+
+A wallet MUST route each share submission over a network path that is
+not shared with any other share of the same vote — for example, a fresh
+Tor circuit per share. This MUST be the default behaviour, not an
+opt-in setting.
+
+A wallet MUST use the same protection for the requests that precede
+voting, in particular commitment tree synchronisation and PIR queries,
+and MUST NOT make any request to a vote server, helper, or PIR endpoint
+over a path that has carried the wallet's ordinary Zcash light client
+traffic for the same user.
+
+The reason for the second requirement is compositional. The voting
+layer exposes an association between a network identity and a vote
+weight. A Zcash light client exposes an association between a network
+identity and a set of addresses. Neither is individually sufficient to
+link an address to a balance; together they are. A wallet that protects
+one and not the other has protected neither.
+
+A wallet that cannot satisfy these requirements MUST inform the user
+before the vote is cast, rather than proceeding silently.
+
+### Submission Timing
+
+A wallet MUST sample each share's submission time independently, and
+MUST NOT submit a vote's shares as a single batch.
+
+A wallet MUST NOT place a voter's entire ballot count into a single
+share. Where insufficient time remains before `vote_end_time` for
+independently timed submission, a wallet SHOULD submit directly and
+promptly rather than concentrating the weight.
+
+### Partial Delegation
+
+A wallet SHOULD allow a voter to delegate part of their balance rather
+than all of it, and SHOULD default to presenting this choice rather
+than delegating the full balance implicitly.
+
+A voter who delegates their entire balance exposes that entire balance
+to whatever residual disclosure the protocol permits. A voter who
+delegates a chosen amount exposes only that amount. Since the delegated
+quantity is the quantity at risk, the choice belongs to the voter.
+
+Where the underlying protocol does not yet specify a partial delegation
+transaction, a wallet SHOULD allow the voter to delegate a subset of
+their notes, which achieves a coarser form of the same control.
+
+
 ## Version Handling
 
 All version strings in `supported_versions` use the form `"v" MAJOR`
@@ -801,6 +892,28 @@ protocol definition are encoded as JSON numbers.
 - **Enumerations**: JSON numbers corresponding to the protobuf enum
 value (e.g., `SESSION_STATUS_ACTIVE` = 1).
 
+# Deployment
+
+A wallet implementation MUST record, and SHOULD make visible to the
+user or in release documentation, the versions of the components it
+was built against:
+
+| Component | Why it is pinned |
+|---|---|
+| Vote protocol circuits | Determine what the proofs a wallet constructs actually prove. |
+| Vote chain / SDK | Determines transaction acceptance and chain semantics. |
+| Client voting library | Determines share decomposition, server selection and timing behaviour. |
+
+Recording the client library version alone is insufficient: the
+circuits determine the meaning of the proofs, and a library version
+does not identify them.
+
+Where a wallet implements share decomposition, server selection or
+submission timing itself rather than consuming them from a shared
+library, it MUST state this, because such a wallet does not inherit
+changes to those behaviours when the library is updated.
+
+
 # Rationale
 
 ## Unified Vote Servers
@@ -851,6 +964,8 @@ is available at
 [^voting-protocol]: [Draft ZIP: Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
 
 [^nullifier-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
+
+[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
 
 [^submission-server]: [Draft ZIP: Shielded Voting Submission Server](draft-valargroup-submission-server.md)
 
