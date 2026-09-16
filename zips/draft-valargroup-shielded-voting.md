@@ -1367,14 +1367,64 @@ redundancy. That rule is replaced. See
 
 #### Submission Timing
 
-On the direct submission path, a client SHOULD sample each share's
-submission time independently over the voting window.
+Share submission follows the scheduling discipline that ZIP 318
+[^zip-0318] specifies for pool-crossing transfers. The two problems are
+the same: a client emits several transactions that together reveal a
+quantity it wishes to keep private, and an observer who can group them
+recovers that quantity. ZIP 318 addresses it with randomized
+decomposition, randomized ordering, and memoryless inter-arrival
+delays. [Vote Share] already supplies the first. This section supplies
+the other two.
+
+Let $T_{\mathsf{end}}$ be the round's $\mathsf{vote}\_\mathsf{end}\_
+\mathsf{time}$, let $T_0$ be the time at which the client commits a
+schedule, and let $W = T_{\mathsf{end}} - T_0 - \Delta$, where
+$\Delta$ is a deployment-specified safety margin covering proof
+construction and inclusion (see [Deployment]).
+
+A client constructing a submission schedule:
+
+1. MUST shuffle the $N_s$ shares into a uniformly random order before
+   assigning submission times, so that the sequence of share values a
+   client emits is not a function of their magnitudes or of their
+   indices within the vote commitment.
+2. MUST assign submission times by advancing a running offset from
+   $T_0$, drawing each successive delay independently from an
+   exponential distribution with rate
+   $\lambda = 1 / \mathsf{MEAN}\_\mathsf{DELAY}$, where
+   $\mathsf{MEAN}\_\mathsf{DELAY} = W / (N_s + 1)$.
+3. MUST discard and redraw any delay exceeding
+   $\mathsf{MAX}\_\mathsf{DELAY}$ (see [Deployment]).
+4. MUST NOT impose a minimum separation between consecutive draws.
+   Enforcing one would destroy the memorylessness that makes the
+   schedule uninformative; occasional short gaps are a property of the
+   distribution, not a defect.
+5. MUST draw all randomness used in the shuffle and the delays from a
+   cryptographically secure random number generator.
+
+**When the window is short.** If the accumulated schedule would place
+any share after $T_{\mathsf{end}} - \Delta$, the client MUST compress
+the schedule by drawing each remaining share's submission time
+independently and uniformly from the interval
+$[\mathsf{now}, T_{\mathsf{end}} - \Delta]$. A client MUST NOT submit
+the remaining shares as a batch, simultaneously, or in share-index
+order, and MUST NOT place more than one share into a single vote chain
+block where it can observe block boundaries. Where the remaining window
+is too short for the client to submit all $N_s$ shares at all, the
+client MUST inform the voter that the round is closing and that
+proceeding will submit shares in close succession, rather than
+proceeding silently.
+
+Submitting promptly is not a substitute for submitting independently. A
+client that reacts to a closing window by sending everything at once
+reproduces, through timing, the exposure that
+[Why There Is No Single-Share Mode] removes from the payload.
 
 On the server-assisted path, a client MAY specify
-$\mathsf{submit}\_\mathsf{at}$ per share. Implementations MUST NOT
-represent this as a privacy measure against the receiving server; it
-affects only the on-chain footprint. See
-[Why Content Linkage Precedes Timing].
+$\mathsf{submit}\_\mathsf{at}$ per share, and the schedule above
+applies to those values. Implementations MUST NOT represent this as a
+privacy measure against the receiving server; it affects only the
+on-chain footprint. See [Why Content Linkage Precedes Timing].
 
 There is no single-share submission mode. Earlier drafts specified that
 a voter casting within a final window place their entire ballot count
@@ -1382,7 +1432,7 @@ into one share, submitted immediately, on the grounds that a server
 might not complete $N_s$ proofs before the deadline. A client MUST NOT
 do this: it concentrates the voter's entire weight into one ciphertext,
 so a single decryption recovers it exactly. A client with insufficient
-time remaining for server-assisted submission SHOULD submit directly
+time remaining for server-assisted submission MUST submit directly
 instead, which requires under a second of proof construction. See
 [Why There Is No Single-Share Mode].
 
@@ -1454,6 +1504,59 @@ where $b_0, \ldots, b_{\ell-1}$ are the ASCII byte values of the string
 and $\ell$ is its length. All tag strings in this protocol are shorter
 than 32 bytes, so the resulting integer is less than $2^{256}$ and fits
 in $\mathbb{F}_{q_{\mathbb{P}}}$ without reduction.
+
+## Verification
+
+This section defines what a party must check to establish that a
+published result follows from the votes that were cast. It is stated
+here because no other document in this set defines it, and because
+verifying a subset of these steps establishes correspondingly less.
+
+A verifier with a copy of the vote chain MUST check each of the
+following. They are ordered so that each step presupposes the ones
+above it.
+
+1. **Round configuration.** The round's snapshot roots are correct, as
+   defined in [^poll-config]. This is not verifiable from vote chain
+   state, because the roots are supplied as input at round creation
+   rather than derived by consensus. A verifier that omits this step
+   establishes only that votes are well formed *with respect to* roots
+   it has not checked.
+2. **Transaction validity.** Every delegation, vote, and share reveal
+   transaction in the round carries a valid proof, and satisfies the
+   out-of-circuit checks in [Delegation Proof], [Vote Proof] and
+   [Vote Reveal Proof] respectively.
+3. **Nullifier disjointness.** The three nullifier sets defined in
+   [Nullifier Sets] contain no duplicates, so no voting authority was
+   consumed twice.
+4. **Accumulation.** The per-$(\mathsf{proposal}\_\mathsf{id},
+   \mathsf{vote}\_\mathsf{decision})$ accumulator equals the
+   component-wise sum of the El Gamal ciphertexts in the round's share
+   reveal transactions.
+5. **Decryption.** The published per-option totals are the decryptions
+   of those accumulators, as attested by the threshold decryption
+   proofs specified in [^ea-ceremony].
+6. **Unit.** The published figures are interpreted in the unit in which
+   they are denominated; see [Ballot Scaling] and [Tally units].
+
+**What this establishes.** Steps 2 through 5 establish that the totals
+are the correct sum of the votes present on the chain. With step 1,
+they establish that those votes were cast by holders of the balances
+they claim.
+
+**What it does not establish.** No step above, and no combination of
+them, establishes that every vote cast was included. Exclusion of a
+share reveal transaction leaves no evidence in chain state; see
+[^voting-setup]. A verified result is therefore a lower bound on the
+support each option received.
+
+**On partial verification.** Checking step 5 alone confirms only that
+the announced totals match the accumulators — it does not check any
+proof, and it does not check either snapshot root. A tool or procedure
+that performs only the decryption check MUST NOT be described as
+verifying a round's result. Implementations of verification tooling
+SHOULD state which of the steps above they perform.
+
 
 # Rationale
 
@@ -1856,6 +1959,44 @@ solve is largely avoided rather than mitigated: a client that
 constructs its own proof discloses nothing to any server, without
 requiring hardware assumptions from the operator set.
 
+## Why ZIP 318 Scheduling
+
+The submission schedule in [Submission Timing] is taken from ZIP 318
+[^zip-0318] rather than designed independently, because the problem is
+the one ZIP 318 already solved.
+
+In a pool migration, a wallet emits several pool-crossing transfers
+whose amounts are individually visible and whose sum is the quantity to
+be protected. In this protocol, a voter emits $N_s$ shares whose sum is
+the ballot count. In both cases an adversary that can group one
+client's emissions recovers the total, and in both cases the defence
+has three parts: the values must not be a deterministic function of the
+total, the order in which they are emitted must not depend on their
+magnitudes, and the times at which they are emitted must be memoryless
+so that a burst does not identify a single client's set.
+
+ZIP 318 specifies all three. Earlier revisions of this protocol
+specified only that shares be submitted at "randomized delays", without
+a distribution, a spread, or an ordering requirement, and specified an
+even decomposition that made the first part vacuous. That is the weaker
+form of the same design, arrived at independently, and the difference
+was not visible while the two documents were read separately.
+
+Adopting ZIP 318's discipline also has a review benefit: the analysis
+supporting it — in particular why memoryless inter-arrival delays are
+preferable to fixed or minimum-separated ones — has already been
+reviewed in that context and need not be re-derived here.
+
+Two differences from ZIP 318 are deliberate. First, delays here are
+expressed in wall-clock time against the round's
+$\mathsf{vote}\_\mathsf{end}\_\mathsf{time}$ rather than in Zcash
+block deltas, because the deadline is a vote chain parameter and the
+vote chain's block rate is not the Zcash block rate. Second,
+$\mathsf{MEAN}\_\mathsf{DELAY}$ is derived from the remaining window
+rather than fixed, because a voting round's duration is a per-round
+configuration value while a migration's duration is chosen by the
+wallet.
+
 ## Why Content Linkage Precedes Timing
 
 Three defences appear in this protocol and its companion documents:
@@ -2018,6 +2159,8 @@ section.
 | Share range | $[0, 2^{30})$ | Per-share plaintext bound. |
 | Decomposition | Randomized | MUST satisfy [Vote Share]; even splitting is forbidden. |
 | Shares per server | $\leq \lceil N_s / s \rceil$ | Server-assisted path only; see [Server Selection]. |
+| $\Delta$ | 1 hour | Safety margin before $\mathsf{vote}\_\mathsf{end}\_\mathsf{time}$; see [Submission Timing]. |
+| $\mathsf{MAX}\_\mathsf{DELAY}$ | $W / 4$ | Delay draws above this are discarded and redrawn. |
 
 ## Tally units
 
@@ -2057,8 +2200,6 @@ the implementation.
 - **Threshold.** The decryption threshold stated in companion documents
   and the threshold used in deployment have differed. The value in use
   MUST be published; see [^ea-ceremony].
-
-construction.
 
 
 # Reference implementation
@@ -2157,6 +2298,10 @@ construction.
 [^pir-governance]: [Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir)
 
 [^ea-ceremony]: [Election Authority Key Ceremony](draft-valargroup-ea-key-ceremony)
+
+[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
+
+[^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318)
 
 [^voting-setup]: [Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup)
 
