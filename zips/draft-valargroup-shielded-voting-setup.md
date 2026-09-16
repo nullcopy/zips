@@ -130,6 +130,15 @@ chain, operator roles, and voting round lifecycle.
 - Validator power distribution affects the trust model for the EA
   key ceremony. See `draft-valargroup-ea-key-ceremony`
   [^draft-ceremony] for EA-specific privacy implications.
+- Validators holding sufficient stake to control block production can
+  decline to include share reveal transactions. Because
+  `vote_decision` appears in cleartext in every share reveal, selecting
+  which votes to exclude by the option they support requires no
+  decryption and no key material. See [Transaction Inclusion].
+- Where validators also hold election authority key shares, a coalition
+  at the decryption threshold can additionally determine the weight of
+  a vote before deciding whether to include it. This is one of the
+  reasons the roles are separated in [Validator].
 
 
 # Requirements
@@ -142,6 +151,11 @@ chain, operator roles, and voting round lifecycle.
 - The vote chain operates as a public, verifiable ledger — anyone can run
   a monitoring node to audit.
 - The system operates with partial validator availability.
+- The capabilities that validators hold over the outcome of a round,
+  including the ability to exclude transactions, are documented rather
+  than left implicit.
+- No organisation operates more than one of the three roles that
+  together would allow it to both group and decrypt a voter's shares.
 
 
 # Non-requirements
@@ -292,11 +306,24 @@ tally computation. Each validator maintains three keypairs:
 Validators join the network by following the flow described in
 [Onboarding Validators].
 
-Each validator additionally runs the submission server bundled
-into the `svoted` binary, which receives encrypted vote share
-payloads from voters and submits the corresponding share reveal
-transactions on their behalf. See `draft-valargroup-submission-server`
-[^draft-submission-server].
+A validator MUST NOT also operate a submission server for the same
+round, and MUST NOT also hold a share of the election authority key
+for the same round.
+
+These three roles — validating blocks, receiving voters' share
+payloads, and holding key material that can decrypt those shares —
+were previously performed by the same operators, on the reasoning that
+introducing a separate operator class would add a trust assumption
+without clear benefit. That reasoning is inverted: co-locating them
+does not avoid an assumption, it conjoins two that must remain
+independent. A submission server can determine which shares belong to
+one voter, and a key share holder can decrypt them; a party holding
+both roles needs no collusion to do both. See
+[Why Roles Are Separated].
+
+A deployment MUST publish which organisation operates each role for a
+round, so that the independence of the three sets can be checked rather
+than assumed.
 
 ### Nullifier Service Operator
 
@@ -625,6 +652,51 @@ For each proposal the coinholder votes on, the wallet performs:
 After `vote_end_time`, the coinholder may verify the final tally
 following [Verification and Auditing].
 
+## Transaction Inclusion
+
+The vote chain is a CometBFT chain, and its validators determine which
+transactions enter blocks. This section states the consequences for a
+voting round, which are not otherwise recorded in this or any companion
+specification.
+
+**What validators can do.** Validators controlling enough stake to
+control block production can decline to include share reveal
+transactions. Because $\mathsf{vote}\_\mathsf{decision}$ appears in
+cleartext in every share reveal transaction, and running per-option
+counts are public while a round is open, selecting which transactions
+to exclude according to the option they support requires no decryption,
+no key material, and no cooperation from any other party.
+
+**What validators cannot do.** They cannot create votes, alter the
+weight of an included vote, or misreport the tally: each is prevented
+by a proof that any observer can check. Exclusion only removes support;
+it cannot manufacture it.
+
+**What this means for a result.** A published result is a lower bound
+on the support each option received, not a measurement of it. Results
+SHOULD be described in those terms.
+
+**Detection.** Exclusion is detectable but not provable from chain
+state alone. An excluded transaction leaves no record on the chain that
+excluded it. Available signals are: a count of votes cast against the
+count of shares revealed; the contents of honest nodes' mempools,
+compared with what was subsequently included; and voters observing
+that their own shares never appeared. The last is currently unavailable
+in practice, because a voter querying the chain for their own share
+nullifiers reveals which nullifiers are theirs; see
+[^draft-voting-protocol].
+
+A deployment SHOULD publish, for each round, the count of share reveal
+transactions accepted into the mempool alongside the count included in
+blocks, from more than one operator, so that a discrepancy is visible
+without requiring any party to be trusted.
+
+**Threshold.** A deployment MUST publish the stake distribution across
+validators for a round, and the proportion of stake required to control
+block production, so that the size of the coalition required to exclude
+transactions is a published figure rather than an inferred one.
+
+
 ## Verification and Auditing
 
 The vote chain is publicly readable. Any party running a full
@@ -680,15 +752,61 @@ voting round across three layers:
   decrypted aggregate following the Tally procedure in
   `draft-valargroup-ea-key-ceremony`.
 
-Because every input to verification — proofs, nullifiers,
-ciphertexts, and partial decryptions — is stored on the public
-vote chain, no full-node operator needs to trust any other
-participant. A round that auto-finalized due to a TALLYING
-timeout (see [Round Lifecycle]) verifies as having no tally;
-this is itself a verifiable property of the chain state.
+The three layers above verify that the transactions in a round are
+well formed and correctly accumulated *with respect to* the round's
+snapshot roots. They do not establish that those roots are correct, and
+the roots are not derived from vote chain state: they are supplied as
+input at round creation and are not validated by consensus.
+
+A full-node operator therefore does not need to trust another
+participant for the three layers above, but does depend on the
+snapshot roots being correct, which this chain does not establish.
+Confirming that requires recomputing both roots from Zcash mainnet
+state, as specified in the poll configuration ZIP
+[^draft-poll-config]. A verification of a round is incomplete without
+it.
+
+A round that auto-finalized due to a TALLYING timeout (see
+[Round Lifecycle]) verifies as having no tally; this is itself a
+verifiable property of the chain state.
+
+Separately, the procedures above verify the transactions that are
+present. They cannot establish that no transaction is missing; see
+[Transaction Inclusion].
 
 
 # Rationale
+
+## Why Roles Are Separated
+
+Three roles in this system have to be held by different organisations:
+the validator that decides which transactions enter blocks, the
+submission server that receives voters' share payloads, and the holder
+of a share of the election authority key.
+
+Earlier drafts bundled all three into one binary run by one operator
+set, reasoning that validators already participate in the key ceremony,
+so a separate submission server operator class would add a trust
+assumption without clear benefit.
+
+The reasoning treats a trust assumption as a cost to be minimised by
+reducing the number of distinct parties. What matters is not how many
+parties there are, but which capabilities land together. A submission
+server can determine which shares belong to one voter, because the
+payloads it receives carry values common to all shares of a vote. A key
+share holder can, with enough peers, decrypt those shares. Separately,
+neither recovers a voter's balance. Held by the same organisation, they
+do, with no collusion required — and where the same organisation also
+validates, it can act on what it learns by deciding what to include.
+
+Separating the roles does not add an assumption. It restores one that
+bundling had quietly removed, by making a coalition necessary where
+previously a single operator sufficed. It also makes the assumption
+checkable: with the operator of each role published, anyone can verify
+that the three sets are disjoint, which is not possible when one
+binary performs all three.
+
+## Other Design Choices
 
 **Separate vote chain (not Zcash mainnet)**: the vote chain is purpose-built
 for governance with ZKP-optimized state transitions (Poseidon hashing, custom
@@ -727,6 +845,28 @@ transfer the role (via `MsgSetVoteManager`). This is a deliberate
 single-party control: the vote manager can create rounds but cannot
 forge votes, and the worst-case mitigation for a compromised vote
 manager is to spin up a new chain.
+
+
+# Deployment
+
+A deployment MUST publish the following for each round. These are
+recorded here, alongside the properties that depend on them, so that a
+divergence between a published value and the specification is visible
+to a reader of this document.
+
+| Parameter | Why it is published |
+|---|---|
+| The organisation operating each validator | Establishes the validator set for the round. |
+| The organisation operating each submission server | Allows the role separation required in [Validator] to be checked. |
+| The organisation holding each election authority key share | As above. |
+| Stake distribution across validators | Determines the coalition size required to exclude transactions; see [Transaction Inclusion]. |
+| The decryption threshold $t$ and holder count $n$ | Bounds every amount-privacy claim in the protocol. |
+| Software versions for the chain, circuits and client library | Required to reproduce or audit a round. |
+
+The three operator sets MUST be disjoint. A deployment that cannot
+satisfy this MUST publish which roles are co-located and which
+organisations hold them, so that the resulting capability is a
+disclosed property of that deployment rather than an unstated one.
 
 
 # Reference implementation
@@ -768,6 +908,8 @@ manager is to spin up a new chain.
 [^draft-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
 [^draft-submission-server]: [Draft ZIP: Vote Share Submission Server](draft-valargroup-submission-server.md)
+
+[^draft-poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config)
 
 [^draft-wallet-api]: [Draft ZIP: Shielded Voting Wallet API](draft-valargroup-shielded-voting-wallet-api.md)
 
