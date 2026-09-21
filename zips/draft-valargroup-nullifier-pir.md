@@ -376,7 +376,8 @@ An operator building this tree MUST derive the nullifier set from its
 own view of the consensus chain, and MUST NOT accept the set, or a root
 committing to it, from another party. Where an application specifies a
 derivation procedure for the set — as the shielded voting application
-does in [^poll-config] — the operator MUST follow it, and MUST publish
+does in `draft-valargroup-shielded-voting-setup` [^voting-setup] — the
+operator MUST follow it, and MUST publish
 the root it derives so that disagreement between operators is visible.
 
 **Chain reorganisation.** An ingest pipeline that processes blocks
@@ -3258,6 +3259,6 @@ three-tier Poseidon tree, the Tier 1 / Tier 2 query orchestration described in t
 
 [^draft-valargroup-orchard-balance-proof]: [Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
 
-[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config.md)
+[^voting-setup]: [Draft ZIP: Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup.md)
 
 [^draft-voting-protocol]: [Draft ZIP: Zcash Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
