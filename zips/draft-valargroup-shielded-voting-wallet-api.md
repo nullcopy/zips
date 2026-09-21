@@ -20,6 +20,11 @@ when, they appear in all capitals.
 
 The terms below are to be interpreted as follows:
 
+Administrator
+
+: A party whose signature over a round's defining fields wallets
+  recognise. See [Configuration Authentication].
+
 Vote round
 
 : A time-bounded voting session defining a set of proposals, a Zcash
@@ -135,19 +140,20 @@ See [Version Handling] for the normative rules.
    configuration JSON document for the round.
    See [Vote Configuration Format].
 
-2. **Validate configuration.** Check all fields against the rules in
-   [Validation Rules] and verify version compatibility per
-   [Version Handling]. Reject the configuration and stop if any
-   check fails.
+2. **Validate and authenticate configuration.** Check all fields
+   against the rules in [Validation Rules], verify version compatibility
+   per [Version Handling], and verify the administrator attestations per
+   [Configuration Authentication]. Reject the configuration and stop if
+   any check fails.
 
 3. **Fetch active round from chain.** Query `GET /shielded-vote/v1/rounds/active`
-   to confirm the round is ACTIVE and retrieve on-chain parameters:
-   `ea_pk`, `nullifier_imt_root`, `nc_root`, and `proposals_hash`.
+   to confirm the round is ACTIVE and retrieve on-chain parameters.
    See [Active Round].
 
-4. **Verify proposals hash.** Compute the proposals hash from the
-   configuration's `proposals` array and compare it to `proposals_hash`
-   from the chain response. See [Proposals Hash].
+4. **Bind the round to the configuration.** Confirm that the chain's
+   round carries exactly the values the authenticated configuration
+   attests to, including the proposals hash computed from the
+   configuration's `proposals` array. See [Binding to the Chain Round].
 
 ## Delegation
 
@@ -219,7 +225,7 @@ participate in the round.
 
 ```json
 {
-  "config_version": 1,
+  "config_version": 2,
   "vote_round_id": "<hex, 64 characters>",
   "vote_servers": [
     {"url": "https://vote1.example.com", "label": "validator-1"}
@@ -228,6 +234,11 @@ participate in the round.
     {"url": "https://pir1.example.com", "label": "pir-1"}
   ],
   "snapshot_height": 2800000,
+  "snapshot_blockhash": "<base64, 32 bytes>",
+  "min_confirmations": 100,
+  "nc_root": "<base64, 32 bytes>",
+  "nullifier_imt_root": "<base64, 32 bytes>",
+  "ea_pk": "<base64, 32 bytes>",
   "vote_end_time": 1735689600,
   "proposals": [
     {
@@ -245,7 +256,10 @@ participate in the round.
     "vote_protocol": "v0",
     "tally": "v0",
     "vote_server": "v1"
-  }
+  },
+  "signatures": [
+    {"key_id": "admin-1", "alg": "ed25519", "sig": "<base64, 64 bytes>"}
+  ]
 }
 ```
 
@@ -254,17 +268,23 @@ participate in the round.
 
 | Field                              | Type             | Description                                                                                                                    |
 | ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `config_version`                   | integer          | Schema version of this configuration document. Currently 1.                                                                    |
+| `config_version`                   | integer          | Schema version of this configuration document. This specification defines version 2.                                           |
 | `vote_round_id`                    | string           | Hex-encoded 32-byte vote round identifier (64 characters, lowercase).                                                          |
 | `vote_servers`                     | array            | One or more vote server base URLs serving both chain and helper endpoints. Each entry has `url` (string) and `label` (string). |
 | `pir_endpoints`                    | array            | One or more nullifier PIR server base URLs. Each entry has `url` and `label`.                                                  |
 | `snapshot_height`                  | integer          | Zcash block height at which the Orchard pool snapshot was taken.                                                               |
+| `snapshot_blockhash`               | string           | Base64-encoded 32-byte hash of the Zcash block at `snapshot_height`.                                                           |
+| `min_confirmations`                | integer          | Confirmation depth used when choosing the snapshot block.                                                                      |
+| `nc_root`                          | string           | Base64-encoded 32-byte Orchard note commitment tree root at the snapshot.                                                      |
+| `nullifier_imt_root`               | string           | Base64-encoded 32-byte nullifier non-membership tree root at the snapshot.                                                     |
+| `ea_pk`                            | string           | Base64-encoded 32-byte election authority public key (compressed Pallas point).                                                |
 | `vote_end_time`                    | integer          | Unix timestamp (seconds) after which votes are no longer accepted.                                                             |
 | `proposals`                        | array            | Ordered list of proposals. Each has `id` (integer, 1-indexed), `title` (string), `description` (string), and `options` (array of `{index, label}`). |
 | `supported_versions.pir`           | array of strings | PIR retrieval scheme versions supported by the servers (e.g., `["v0", "v1"]`).                                                 |
 | `supported_versions.vote_protocol` | string           | Vote protocol version covering the ZKP circuits and commitment tree structure (e.g., `"v0"`).                                  |
 | `supported_versions.tally`         | string           | Tally method version covering threshold decryption and result aggregation (e.g., `"v0"`).                                      |
 | `supported_versions.vote_server`   | string           | Vote server version covering the REST API (e.g., `"v1"`).                                                                      |
+| `signatures`                       | array            | Administrator attestations. Each entry has `key_id` (string), `alg` (string) and `sig` (base64). See [Configuration Authentication]. |
 
 
 ### Validation Rules
@@ -274,19 +294,25 @@ configuration document is well formed, not that it is authentic. A
 document passing every check below may have been produced by anyone.
 
 A wallet MUST additionally authenticate the configuration as specified
-in [^poll-config], which defines the fields covered by administrator
-signatures and the signature threshold a wallet enforces. A wallet MUST
-NOT use a configuration that fails authentication, and MUST NOT treat
-the structural checks below as a substitute for it.
+in [Configuration Authentication]. A wallet MUST NOT use a configuration
+that fails authentication, and MUST NOT treat the structural checks
+below as a substitute for it.
 
 A wallet MUST validate the structure of the configuration before use:
 
 - `config_version` MUST be a version the wallet recognizes. This
-specification defines version 1.
+specification defines version 2. A version 1 document carries no
+attestation: a wallet MUST NOT accept one for a round created after
+this specification takes effect, and a wallet that accepts one for an
+earlier round MUST treat that round's snapshot as unattested.
 - `vote_round_id` MUST be exactly 64 lowercase hexadecimal characters.
 - `vote_servers` MUST contain at least one entry.
 - `pir_endpoints` MUST contain at least one entry.
 - `snapshot_height` MUST be greater than 0.
+- `snapshot_blockhash`, `nc_root`, `nullifier_imt_root` and `ea_pk` MUST
+each be the base64 encoding of exactly 32 bytes.
+- Each `signatures` entry MUST have a string `key_id`, a string `alg`,
+and a base64 `sig`.
 - `proposals` MUST contain between 1 and 15 entries.
 - Each proposal MUST have between 2 and 8 options.
 - Proposal `id` values MUST be unique and in the range 1 to 15.
@@ -296,6 +322,53 @@ specification defines version 1.
 `supported_versions.vote_protocol`, and `supported_versions.tally`
 MUST be recognized versions; `supported_versions.pir` MUST contain
 at least one version the wallet supports.
+
+### Configuration Authentication
+
+A wallet holds a **trusted key set**: a list of administrator public
+keys, each with a `key_id` and an `alg`, together with the administrator
+signature threshold $m$. The trusted key set is part of the wallet's own
+configuration, not of any vote configuration document; how it is
+provisioned is outside the scope of this specification.
+
+For each entry in the configuration's `signatures`, a wallet:
+
+1. MUST resolve `key_id` to a key in its trusted key set. If no key
+   matches, the signature MUST be treated as invalid.
+2. MUST verify that the entry's `alg` matches the `alg` of the resolved
+   key. If they differ, the signature MUST be treated as invalid.
+3. MUST verify `sig` over the bytes defined in the "Round Attestation"
+   section of `draft-valargroup-shielded-voting-setup` [^voting-setup],
+   taking each field from the configuration (`vote_round_id` decoded
+   from hex, the base64 fields decoded to bytes) and `proposals_hash` as
+   computed from the configuration's `proposals` per [Proposals Hash].
+   This specification defines one algorithm, `"ed25519"`, verified per
+   RFC 8032 [^rfc8032].
+4. MUST count at most one valid signature per distinct `key_id`.
+
+A wallet MUST accept a configuration only if the number of valid
+signatures is at least $m$. $m$ MUST be at least 2, and MUST be taken
+from the trusted key set, never from the configuration: a party able to
+publish a configuration could otherwise also set its threshold to 1.
+
+### Binding to the Chain Round
+
+A wallet learns a round's on-chain parameters from a vote server
+([Active Round]), and vote servers are not authenticated. An
+authenticated configuration therefore constrains the round a wallet
+takes part in only if the wallet checks that the two agree.
+
+Before delegating, voting, or submitting any share in a round, a wallet
+MUST confirm that the `VoteRound` it retrieved carries the same
+`vote_round_id`, `snapshot_height`, `snapshot_blockhash`, `nc_root`,
+`nullifier_imt_root`, `vote_end_time` and `ea_pk` as the authenticated
+configuration, and that its `proposals_hash` equals the hash of the
+configuration's `proposals` computed per [Proposals Hash]. A wallet MUST
+NOT take part in a round that fails this check.
+
+Without this check a vote server can supply snapshot roots other than
+those the administrators attested to, or an `ea_pk` of its own, to which
+the wallet would then encrypt every share.
 
 ### Distribution
 
@@ -308,8 +381,8 @@ to the configuration file.
 - Bundling the configuration within a wallet release.
 
 The choice of distribution mechanism is outside the scope of this
-specification. Regardless of the mechanism, the wallet MUST validate the
-configuration as described above before using it.
+specification. Regardless of the mechanism, the wallet MUST validate and
+authenticate the configuration as described above before using it.
 
 ## Data Query Endpoints
 
@@ -996,7 +1069,9 @@ is available at
 
 [^nullifier-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
-[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config.md)
+[^voting-setup]: [Draft ZIP: Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup.md)
+
+[^rfc8032]: [RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)](https://www.rfc-editor.org/rfc/rfc8032)
 
 
 [^orchard-balance-proof]: [Draft ZIP: Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
