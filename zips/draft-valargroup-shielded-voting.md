@@ -1517,11 +1517,12 @@ following. They are ordered so that each step presupposes the ones
 above it.
 
 1. **Round configuration.** The round's snapshot roots are correct, as
-   defined in [^poll-config]. This is not verifiable from vote chain
-   state, because the roots are supplied as input at round creation
-   rather than derived by consensus. A verifier that omits this step
-   establishes only that votes are well formed *with respect to* roots
-   it has not checked.
+   established by the procedure in the "Snapshot Recomputation" section
+   of `draft-valargroup-shielded-voting-setup` [^voting-setup]. This is
+   not verifiable from vote chain state, because the roots are supplied
+   as input at round creation rather than derived by consensus. A
+   verifier that omits this step establishes only that votes are well
+   formed *with respect to* roots it has not checked.
 2. **Transaction validity.** Every delegation, vote, and share reveal
    transaction in the round carries a valid proof, and satisfies the
    out-of-circuit checks in [Delegation Proof], [Vote Proof] and
@@ -2298,8 +2299,6 @@ the implementation.
 [^pir-governance]: [Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
 [^ea-ceremony]: [Election Authority Key Ceremony](draft-valargroup-ea-key-ceremony.md)
-
-[^poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config.md)
 
 [^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318.md)
 
