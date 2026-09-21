@@ -13,9 +13,9 @@
 
 # Terminology
 
-The key words "MUST" and "MAY" in this document are to be
-interpreted as described in BCP 14 [^BCP14] when, and only when,
-they appear in all capitals.
+The key words "MUST", "MUST NOT", "SHOULD", "RECOMMENDED" and "MAY" in
+this document are to be interpreted as described in BCP 14 [^BCP14]
+when, and only when, they appear in all capitals.
 
 The terms below are to be interpreted as follows:
 
@@ -36,6 +36,10 @@ Poll runner
 
 Vote manager
 : The on-chain role authorized to create voting rounds.
+
+Administrator
+: A party whose signature over a round's defining fields wallets
+  recognise. See [Round Attestation].
 
 Bootstrap operator
 : The entity that provisions the vote chain genesis and initial
@@ -68,6 +72,10 @@ Election Authority (EA)
   `draft-valargroup-ea-key-ceremony` [^draft-ceremony] for the
   ceremony protocol.
 
+Key-share holder
+: A holder of a share of a round's Election Authority private key.
+  See [Ratification].
+
 Snapshot height
 : The Zcash mainnet block height at which eligible Orchard note balances
   are captured. See [Snapshot Configuration] for constraints.
@@ -87,6 +95,11 @@ coinholder voting. It defines a purpose-built vote chain built on Cosmos
 SDK, three operator roles (bootstrap operator, vote manager, validator),
 and the lifecycle of a voting round from snapshot selection through tally
 verification.
+
+A round is anchored to a specific Zcash mainnet block. This ZIP specifies
+how the round's snapshot roots are derived from that block and
+independently recomputed, how administrators attest to a round, and how
+the holders of the Election Authority key ratify it before it opens.
 
 The vote chain stores vote commitments in a Poseidon Merkle tree, tracks
 three nullifier sets to prevent double-voting, and accumulates encrypted
@@ -506,24 +519,46 @@ through whatever distribution path they choose.
 
 ### Snapshot Configuration
 
-A voting round is anchored to a Zcash mainnet snapshot: a specific
-mainnet block height at which the eligible Orchard pool is
-captured. The poll runner chooses this snapshot height subject
-to the following constraint:
+A voting round is anchored to a Zcash mainnet snapshot: a single
+mainnet block, identified by both its height $H$ (the snapshot height)
+and its hash $\mathsf{snapshot}\_\mathsf{blockhash}$, at which the
+eligible Orchard pool is captured. The poll runner chooses the block
+subject to the following constraints:
 
-- The height MUST be at or after NU5 activation, since the
-  protocol requires Orchard.
+- $H$ MUST be at or after NU5 activation, since the protocol requires
+  Orchard.
+- When the round is created (see [Poll Creation]), $H$ MUST be at
+  least $\mathsf{min}\_\mathsf{confirmations}$ blocks below the tip of
+  the Zcash mainnet best chain, where
+  $\mathsf{min}\_\mathsf{confirmations}$ is a deployment parameter (see
+  [Deployment]).
+- $\mathsf{snapshot}\_\mathsf{blockhash}$ MUST be the hash of the block
+  at height $H$ on the Zcash mainnet best chain.
 
-Choosing the snapshot height is the start of round setup, not a
-single automatic action. The poll runner is responsible for the
-following coordinated activities:
+The confirmation depth keeps the snapshot out of the part of the chain
+that is realistically subject to reorganisation. The block hash binds
+the round to a block rather than to a height, so that a reorganisation
+affecting the snapshot is detected rather than silently changing the
+eligible note set. If the block at height $H$ on the best chain ceases
+to have hash $\mathsf{snapshot}\_\mathsf{blockhash}$ after the round is
+created, the round MUST NOT open, and a round already open MUST be
+abandoned: the snapshot it is anchored to no longer exists, and the
+eligibility of every vote cast in it is undefined.
 
-1. **Determine the snapshot's commitment values.** Compute the
-   Orchard note commitment tree root ($\mathsf{nc}\_\mathsf{root}$)
-   and the nullifier non-membership Indexed Merkle Tree root
-   ($\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$) at the
-   chosen height. These values are deterministic given the
-   height; they are derived from Zcash mainnet state.
+Choosing the snapshot is the start of round setup, not a single
+automatic action. The poll runner is responsible for the following
+coordinated activities:
+
+1. **Determine the snapshot roots.** The Orchard note commitment tree
+   root ($\mathsf{nc}\_\mathsf{root}$) and the nullifier non-membership
+   tree root ($\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$) are
+   the two roots $\mathsf{rt^{cm}}$ and $\mathsf{rt^{excl}}$ of the pool
+   snapshot at height $H$, as defined in the "Pool Snapshot" section of
+   `draft-valargroup-orchard-balance-proof` [^draft-balance-proof], on
+   the chain whose block at height $H$ has hash
+   $\mathsf{snapshot}\_\mathsf{blockhash}$. No party has discretion over
+   their values. The poll runner derives them by the procedure in
+   [Snapshot Recomputation].
 
 2. **Ensure the nullifier service has the snapshot's PIR
    database.** The poll runner coordinates with each nullifier
@@ -539,6 +574,32 @@ following coordinated activities:
    into the voting round initialization transaction (see
    [Poll Creation]) so that on-chain verifiers and wallet
    clients use them as ZKP public inputs.
+
+### Snapshot Recomputation
+
+This procedure defines what it means for a round's snapshot roots to be
+correct. Any party with a Zcash full node MUST be able to perform it:
+
+1. Confirm that the block at height $H$ on the node's best chain has
+   hash $\mathsf{snapshot}\_\mathsf{blockhash}$. If it does not, the
+   round is not well formed.
+2. Derive $\mathsf{nc}\_\mathsf{root}$ as the Orchard note commitment
+   tree root as of the end of block $H$.
+3. Collect every Orchard nullifier revealed in a block at height at most
+   $H$ on the best chain, construct the nullifier non-membership tree
+   over that set as specified in `draft-valargroup-orchard-balance-proof`
+   [^draft-balance-proof], and derive its root.
+4. Compare both derived values with the round's
+   $\mathsf{nc}\_\mathsf{root}$ and
+   $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$.
+
+A round is **well formed** if all four steps succeed. The set in step 3
+is correct only if it holds every nullifier revealed at or before $H$
+and nothing else: an implementation that derives it incrementally MUST
+handle chain reorganisations as specified for the nullifier service's
+ingest pipeline in `draft-valargroup-nullifier-pir` [^draft-pir], and
+MUST NOT produce a root for $H$ until it has confirmed that the block it
+ingested at $H$ has hash $\mathsf{snapshot}\_\mathsf{blockhash}$.
 
 ### Poll Creation
 
@@ -566,9 +627,10 @@ so that the round ID can enter ZKP circuits as a public input.
 
 The round enters the **PENDING** state. The EA key ceremony (see
 `draft-valargroup-ea-key-ceremony` [^draft-ceremony]) runs
-automatically. On successful completion, the
-round transitions to **ACTIVE**, the voting window opens, and the
-transition timestamp is recorded as `ceremony_phase_start`. Clients use
+automatically. Once it completes and at least $t$ key-share holders have
+ratified the round (see [Ratification]), the round transitions to
+**ACTIVE**, the voting window opens, and the transition timestamp is
+recorded as `ceremony_phase_start`. Clients use
 `ceremony_phase_start` together with `vote_end_time` to construct their
 share submission schedule, as specified in the "Submission Timing"
 section of `draft-valargroup-shielded-voting` [^draft-voting-protocol].
@@ -577,11 +639,51 @@ drafts defined for the end of the voting window has been removed, and a
 client near the deadline compresses its schedule rather than
 concentrating its weight.
 
+### Round Attestation
+
+Administrators attest to a round by signing its defining fields. A
+wallet accepts a round only with at least $m$ valid attestations from
+administrators it recognises, as specified in
+`draft-valargroup-shielded-voting-wallet-api` [^draft-wallet-api], and
+the administrator signature threshold $m$ MUST be at least 2.
+
+The bytes covered by an attestation are the concatenation, in this
+order, of:
+
+| Component | Width |
+|---|---|
+| The ASCII string `ZcashVotingRoundAttestation:v2` | 30 bytes |
+| `vote_round_id` | 32 bytes |
+| `snapshot_height`, big-endian unsigned | 4 bytes |
+| `snapshot_blockhash` | 32 bytes |
+| `nc_root` | 32 bytes |
+| `nullifier_imt_root` | 32 bytes |
+| `proposals_hash` | 32 bytes |
+| `vote_end_time`, big-endian unsigned | 8 bytes |
+| `ea_pk` | 32 bytes |
+| `min_confirmations`, big-endian unsigned | 4 bytes |
+
+All components are fixed width, so the encoding is unambiguous without
+length prefixes. The domain separator distinguishes these bytes from any
+other signature the same key may produce, and its version is that of
+the vote configuration format that carries the attestation.
+
+An administrator MUST NOT sign a round unless it has performed
+[Snapshot Recomputation] for that round, using a Zcash full node under
+its own control, and obtained the round's $\mathsf{nc}\_\mathsf{root}$
+and $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$. Agreement with
+another party's copy of the configuration does not satisfy this:
+comparing two copies of the same values establishes only that two
+parties received the same input, not that the input is correct. See
+[Why Snapshot Roots Are Recomputed].
+
 ### Round Lifecycle
 
-1. **PENDING**: round created, awaiting EA key ceremony.
-2. **ACTIVE**: ceremony complete, voting window open. Voters may delegate,
-   vote, and submit shares (see `draft-valargroup-shielded-voting`
+1. **PENDING**: round created, awaiting the EA key ceremony and its
+   ratification by key-share holders (see [Ratification]).
+2. **ACTIVE**: ceremony complete and round ratified, voting window
+   open. Voters may delegate, vote, and submit shares (see
+   `draft-valargroup-shielded-voting`
    [^draft-voting-protocol]).
 3. **TALLYING**: `vote_end_time` has passed. Validators submit
    partial decryptions, the chain combines them, and tally
@@ -592,6 +694,68 @@ concentrating its weight.
    auto-finalizes with no tally, preserving liveness.
 4. **FINALIZED**: tally published and verifiable. A round that
    auto-finalized due to a TALLYING timeout publishes no tally.
+
+### Ratification
+
+Attestation ([Round Attestation]) establishes that a round's parameters
+are correct. It does not establish that the round will be tallied. Those
+are different parties: administrators configure a round, and key-share
+holders decrypt its result. A round can be correctly configured, voted
+in, and never opened.
+
+A key-share holder ratifies a round with its acknowledgement in the EA
+key ceremony (see `draft-valargroup-ea-key-ceremony` [^draft-ceremony]),
+which it submits to the vote chain after verifying its share. For this
+purpose the acknowledgement MUST commit to `vote_round_id` as well as to
+$\mathsf{ea}\_\mathsf{pk}$ and the holder's address, and submitting it
+is the holder's statement that it holds a share for the round and will
+take part in its tally. Binding the key keeps a ratification from
+carrying over to a round rekeyed after the fact, and binding the round
+identifier keeps it from carrying over to another round under the same
+key.
+
+A round MUST NOT enter ACTIVE until at least $t$ distinct key-share
+holders have ratified it, where $t$ is the round's decryption threshold.
+Below $t$ the question does not arise: a round ratified by fewer than $t$
+holders cannot be tallied even if every ratifying holder honours its
+statement, so requiring $t$ makes the ratifications a statement that the
+round is tallyable, not merely that some holders are willing. Because
+ratifications are vote chain transactions, they are published with the
+round.
+
+A ratification is a statement of intent, not an enforceable commitment.
+A holder can ratify and then decline to take part, and nothing in this
+document prevents that. What ratification provides is that the decision
+is made and published before voters commit their balances, rather than
+discovered afterwards, and that a holder declining to tally a round it
+ratified is visibly departing from a published statement. See
+[Why Ratification Precedes Voting].
+
+### Election Authority Key Custody
+
+**Share generation.** A ceremony that generates the key at a single
+party and distributes shares from it — a trusted dealer, as in
+`draft-valargroup-ea-key-ceremony` [^draft-ceremony] — gives that party
+the full Election Authority private key for the duration of the
+ceremony. The claim that no single party holds it holds only after the
+ceremony completes, and only if the dealer destroyed its copy, which no
+other party can verify. A deployment using a trusted dealer MUST
+identify the party that acted as dealer for each round, and SHOULD adopt
+distributed key generation, or publish verifiable secret sharing
+commitments, so that key-share holders can confirm their shares are
+consistent with $\mathsf{ea}\_\mathsf{pk}$ without trusting the dealer.
+
+**Retention.** Each key-share holder MUST destroy its share once the
+round is finalized and its tally published, and a deployment MUST
+publish the retention period it applies. The encrypted shares of every
+individual vote remain on the vote chain permanently, and their
+encryption is not post-quantum, so retained shares are a live capability
+against a permanent record of individual voters' balances, not a dormant
+convenience. Retention is not needed for audit: the partial decryptions
+and their DLEQ proofs are published on chain and can be re-verified at
+any time without the key. A deployment that retains shares nonetheless
+MUST state for how long, and MUST treat that period as the period over
+which its amount-privacy claims hold.
 
 ## Coinholder Participation
 
@@ -684,10 +848,10 @@ on the support each option received, not a measurement of it. Results
 SHOULD be described in those terms.
 
 Separately from what validators can do, whether a result may be
-described as representative of coinholder sentiment depends on
-conditions on the round itself, including the availability of
-independent conforming wallet implementations for its duration. Those
-conditions are specified in [^draft-poll-config].
+described as representative of coinholder sentiment also depends on
+conditions on the round itself, such as the diversity of wallet
+implementations available to voters. Those conditions are not yet
+specified; see [Open Issues].
 
 **Detection.** Exclusion is detectable but not provable from chain
 state alone. An excluded transaction leaves no record on the chain that
@@ -775,9 +939,9 @@ A full-node operator therefore does not need to trust another
 participant for the three layers above, but does depend on the
 snapshot roots being correct, which this chain does not establish.
 Confirming that requires recomputing both roots from Zcash mainnet
-state, as specified in the poll configuration ZIP
-[^draft-poll-config]. A verification of a round is incomplete without
-it.
+state by the procedure in [Snapshot Recomputation], which also
+establishes that the round is well formed. A verification of a round is
+incomplete without it.
 
 A round that auto-finalized due to a TALLYING timeout (see
 [Round Lifecycle]) verifies as having no tally; this is itself a
@@ -818,6 +982,56 @@ previously a single operator sufficed. It also makes the assumption
 checkable: with the operator of each role published, anyone can verify
 that the three sets are disjoint, which is not possible when one
 binary performs all three.
+
+## Why Snapshot Roots Are Recomputed
+
+Requiring more administrators to sign a round does not, on its own, make
+its snapshot roots any more likely to be correct. If no signer derives
+the roots independently, a threshold of signatures attests only that
+several parties received the same document from the same source. An
+incorrect nullifier root is not a remote failure: if the set behind it
+omits a nullifier revealed on Zcash mainnet before the snapshot, the
+holder of the spent note can prove it unspent and vote with it as well
+as with the note that replaced it, and an ingest pipeline that mishandles
+a chain reorganisation can produce such a set with no malice involved.
+Recomputation is what makes attestation meaningful: a signature
+threshold multiplies an underlying check, and without the check there is
+nothing to multiply.
+
+## Why Bind to a Block Hash
+
+Anchoring a round to a height alone leaves its meaning dependent on
+which chain the reader follows. Binding it to
+$(H, \mathsf{snapshot}\_\mathsf{blockhash})$ makes a reorganisation
+affecting the snapshot a detectable condition with a specified response,
+rather than a silent change in the eligible note set.
+
+## Why Ratification Precedes Voting
+
+A voter deciding whether to take part is deciding whether to expose a
+quantity — their balance at the snapshot, to the extent the protocol
+permits — in exchange for influence over an outcome. That trade exists
+only if the outcome will be produced. A round names
+$\mathsf{ea}\_\mathsf{pk}$, but a public key is not a statement by
+anybody that they will use the corresponding shares. A statement
+collected after the round records what happened; one collected before it
+opens is an input the voter can act on.
+
+## Why the Chain Does Not Validate the Snapshot Roots
+
+The complete remedy is for the vote chain to compute the snapshot roots
+itself, so that they are consensus data rather than an input and no
+verifier depends on administrators having performed
+[Snapshot Recomputation]. That requires every validator to follow Zcash
+mainnet state and implement both tree constructions: a change to the
+vote chain's consensus rules, which this document does not make. The
+roots are specified so that the change remains available. They are
+deterministic functions of Zcash consensus state with an explicit
+derivation procedure, so adding validation later means validators
+implementing [Snapshot Recomputation], not redefining the roots. Until
+then a round's snapshot is only as correct as administrators' adherence
+to [Round Attestation], and this document states that dependency rather
+than leaving it implicit.
 
 ## Other Design Choices
 
@@ -875,11 +1089,22 @@ to a reader of this document.
 | Stake distribution across validators | Determines the coalition size required to exclude transactions; see [Transaction Inclusion]. |
 | The decryption threshold $t$ and holder count $n$ | Bounds every amount-privacy claim in the protocol. |
 | Software versions for the chain, circuits and client library | Required to reproduce or audit a round. |
+| The administrators and their signing keys | Establishes whose attestations wallets recognise; see [Round Attestation]. |
+| The administrator signature threshold $m$ | At least 2; see [Round Attestation]. |
+| $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
+| The party that dealt the Election Authority key, if a trusted dealer was used | See [Election Authority Key Custody]. |
+| The key-share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
 
 The three operator sets MUST be disjoint. A deployment that cannot
 satisfy this MUST publish which roles are co-located and which
 organisations hold them, so that the resulting capability is a
 disclosed property of that deployment rather than an unstated one.
+
+The RECOMMENDED value of $\mathsf{min}\_\mathsf{confirmations}$ is 100
+blocks. The poll runner and each administrator SHOULD publish the
+software and version they used to derive the snapshot roots, and the
+values they derived, so that a disagreement about the snapshot can be
+told apart from a disagreement about the derivation.
 
 
 # Reference implementation
@@ -902,6 +1127,35 @@ disclosed property of that deployment rather than an unstated one.
   the wallet API ZIP describes only the endpoint URLs. A normative
   spec home is needed before wallet clients and nullifier service
   servers from independent implementations can interoperate.
+- **Snapshot root validation by consensus**: see
+  [Why the Chain Does Not Validate the Snapshot Roots].
+- **Implementation diversity**: a result is described as coinholder
+  sentiment, but where one client is the only practical way to vote, its
+  defaults — how it splits shares, which servers it uses, when it
+  submits — are the protocol as every voter experiences it. The
+  conditions under which a result may be described as representative are
+  not specified. Requiring that some number of independent
+  implementations be *available* is not checkable, and is met by two
+  implementations one of which casts nearly every ballot. A checkable
+  form would bound the share of ballots, or of voting weight, cast
+  through any one implementation, and would bind the deployment that
+  publishes the result.
+- **EA key ceremony specification**: `draft-valargroup-ea-key-ceremony`
+  [^draft-ceremony] is not an open proposal, but [Ratification] and
+  [Election Authority Key Custody] depend on it. Its acknowledgement
+  commits to $\mathsf{ea}\_\mathsf{pk}$ and the holder's address but not
+  to `vote_round_id`, and it recommends retaining shares indefinitely,
+  which [Election Authority Key Custody] forbids.
+- **Administrator keys**: wallets identify administrator keys as
+  `draft-valargroup-shielded-voting-wallet-api` [^draft-wallet-api]
+  specifies, but how administrators are chosen, and how their keys are
+  registered and rotated, is not specified.
+- **Attestation timing**: an attestation covers
+  $\mathsf{ea}\_\mathsf{pk}$, which exists only once the EA key ceremony
+  completes, and the round opens as soon as it is ratified. Conforming
+  wallets therefore cannot take part in a round until administrators
+  attest to it after it opens, which shortens the effective voting window
+  by however long that takes.
 
 
 # References
@@ -920,8 +1174,6 @@ disclosed property of that deployment rather than an unstated one.
 
 [^draft-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
-
-[^draft-poll-config]: [Draft ZIP: Shielded Voting Poll Configuration and Snapshot](draft-zodl-shielded-voting-poll-config.md)
 
 [^draft-wallet-api]: [Draft ZIP: Shielded Voting Wallet API](draft-valargroup-shielded-voting-wallet-api.md)
 
