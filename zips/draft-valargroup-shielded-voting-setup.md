@@ -69,8 +69,7 @@ Election Authority (EA)
 : A virtual signing key, jointly constructed by validators during a key
   ceremony so that no single party holds the private key. Used to encrypt
   vote shares and decrypt the final tally. See
-  `draft-valargroup-ea-key-ceremony` [^draft-ceremony] for the
-  ceremony protocol.
+  [Election Authority Key Ceremony] for the ceremony protocol.
 
 Key-share holder
 : A holder of a share of a round's Election Authority private key.
@@ -83,8 +82,8 @@ Snapshot height
 For definitions of cryptographic terms including *alternate nullifier*,
 *nullifier non-membership tree*, *nullifier domain*, *pool snapshot*, and
 *claim*, see the Orchard Proof-of-Balance ZIP [^draft-balance-proof]. For
-EA key ceremony terms, see `draft-valargroup-ea-key-ceremony`
-[^draft-ceremony]. For PIR-related terms, see
+EA key ceremony terms, see [Election Authority Key Ceremony]. For
+PIR-related terms, see
 `draft-valargroup-nullifier-pir` [^draft-pir].
 
 
@@ -142,8 +141,8 @@ chain, operator roles, and voting round lifecycle.
 - Bootstrap operators learn the network identities of validators
   during onboarding (see [Onboarding Validators]).
 - Validator power distribution affects the trust model for the EA
-  key ceremony. See `draft-valargroup-ea-key-ceremony`
-  [^draft-ceremony] for EA-specific privacy implications.
+  key ceremony. See [Election Authority Key Ceremony] and
+  [Election Authority Key Custody].
 - Validators holding sufficient stake to control block production can
   decline to include share reveal transactions. Because
   `vote_decision` appears in cleartext in every share reveal, selecting
@@ -314,8 +313,8 @@ No other account can claim or reassign the role.
 ### Validator
 
 Validators participate in consensus, the EA key ceremony (see
-`draft-valargroup-ea-key-ceremony` [^draft-ceremony]), and automatic
-tally computation. Each validator maintains three keypairs:
+[Election Authority Key Ceremony]), and automatic tally computation.
+Each validator maintains three keypairs:
 
 - **Consensus keypair**: used for CometBFT consensus.
 - **Account keypair**: used for submitting chain transactions.
@@ -626,8 +625,7 @@ specified in the "Voting Round Identifier" section of
 so that the round ID can enter ZKP circuits as a public input.
 
 The round enters the **PENDING** state. The EA key ceremony (see
-`draft-valargroup-ea-key-ceremony` [^draft-ceremony]) runs
-automatically. Once it completes and at least $t$ key-share holders have
+[Election Authority Key Ceremony]) runs automatically. Once it completes and at least $t$ key-share holders have
 ratified the round (see [Ratification]), the round transitions to
 **ACTIVE**, the voting window opens, and the transition timestamp is
 recorded as `ceremony_phase_start`. Clients use
@@ -687,13 +685,96 @@ parties received the same input, not that the input is correct. See
    [^draft-voting-protocol]).
 3. **TALLYING**: `vote_end_time` has passed. Validators submit
    partial decryptions, the chain combines them, and tally
-   decryption runs automatically (see
-   `draft-valargroup-ea-key-ceremony` [^draft-ceremony]). The
+   decryption runs automatically (see the "Tally" section of
+   `draft-valargroup-shielded-voting` [^draft-voting-protocol]). The
    chain enforces a bounded timeout on the TALLYING state: if a
    tally is not submitted within this timeout, the round
    auto-finalizes with no tally, preserving liveness.
 4. **FINALIZED**: tally published and verifiable. A round that
    auto-finalized due to a TALLYING timeout publishes no tally.
+
+### Election Authority Key Ceremony
+
+Each round uses a fresh election authority keypair
+$(\mathsf{ea}\_\mathsf{sk}, \mathsf{ea}\_\mathsf{pk})$. The ceremony
+that produces it runs automatically when the round enters PENDING.
+
+Scoping the key to one round bounds the damage from a key compromise to
+that round, and means a key-share holder that leaves the validator set
+cannot decrypt later rounds. The cryptographic constructions used below
+— El Gamal on Pallas, ECIES on Pallas, and Chaum-Pedersen DLEQ proofs —
+are specified in `draft-valargroup-shielded-voting`
+[^draft-voting-protocol].
+
+**Eligibility.** Every validator holding a registered Pallas public key
+at the time of round creation is eligible. Registration is bound at
+validator creation, as specified in [Onboarding Validators]; a validator
+without a registered Pallas key is bonded for consensus but takes no
+part in the ceremony.
+
+**Dealer selection.** The next block proposer acts as dealer.
+
+**Key generation and distribution.** Let $n$ be the number of eligible
+validators and let $t = \lceil n/2 \rceil + 1$, with a minimum of 2, be
+the round's decryption threshold. The dealer:
+
+1. Samples $\mathsf{ea}\_\mathsf{sk}$ uniformly at random and computes
+   $\mathsf{ea}\_\mathsf{pk}$.
+2. Constructs a random polynomial $f$ of degree $t - 1$ over the Pallas
+   scalar field with $f(0) = \mathsf{ea}\_\mathsf{sk}$.
+3. Evaluates $f(i)$ for $i = 1, \ldots, n$ to produce one Shamir share
+   per eligible validator.
+4. Encrypts each share $f(i)$ to that validator's registered Pallas key
+   using ECIES, with a fresh ephemeral scalar per recipient.
+5. Publishes to the chain: $\mathsf{ea}\_\mathsf{pk}$, the threshold
+   $t$, every encrypted share, and every verification key
+   $\mathsf{VK}_i = [f(i)]\, G$.
+6. Securely erases $\mathsf{ea}\_\mathsf{sk}$, the polynomial
+   coefficients, and every share value.
+
+Step 6 is not verifiable by any other party.
+[Election Authority Key Custody] states what follows from that, and
+what a deployment MUST do about it.
+
+**Acknowledgement.** Each eligible validator decrypts its share,
+verifies that $[f(i)]\, G$ equals the published $\mathsf{VK}_i$,
+stores the share, and submits an acknowledgement transaction carrying
+
+$$\mathsf{SHA256}\bigl(\texttt{"ack"} \mathbin\| \mathsf{vote}\_\mathsf{round}\_\mathsf{id} \mathbin\| \mathsf{ea}\_\mathsf{pk} \mathbin\| \mathsf{validator}\_\mathsf{address}\bigr)$$
+
+A validator MUST NOT acknowledge a share that fails the verification
+key check. Committing to $\mathsf{ea}\_\mathsf{pk}$ keeps an
+acknowledgement from carrying over to a round rekeyed after the fact;
+committing to `vote_round_id` keeps it from carrying over to another
+round under the same key. This acknowledgement is also the holder's
+ratification of the round; see [Ratification].
+
+**Confirmation.** The ceremony confirms when every eligible validator
+has acknowledged, or, after the acknowledgement timeout, when at least
+$t$ have. Validators that did not acknowledge are dropped from the
+round and increment a consecutive-miss counter; after three consecutive
+misses a validator MUST be jailed, which removes it from the active set
+without burning bonded value. Ceremony non-participation is a liveness
+failure, not a safety violation, which is why it is penalised by
+jailing rather than by slashing.
+
+If fewer than $t$ eligible validators acknowledge within the timeout,
+the ceremony resets and a new dealer is selected.
+
+Requiring $t$ acknowledgements before confirmation is deliberate: the
+number of acknowledgements required to confirm is the same $t$ used for
+threshold decryption. Were confirmation to require fewer, a round could
+open that could never be tallied.
+
+**Validator set changes.** A validator joining during an active round
+receives no share for that round and MUST wait for the round to
+complete. A validator leaving retains its share and cannot be compelled
+to delete it; per-round keys bound what that share is worth, since it
+opens nothing in any other round.
+
+**Timing parameters.** A deployment MUST publish the ceremony deal
+timeout and the acknowledgement timeout it applies, and the
+consecutive-miss count at which a validator is jailed.
 
 ### Ratification
 
@@ -703,16 +784,11 @@ are different parties: administrators configure a round, and key-share
 holders decrypt its result. A round can be correctly configured, voted
 in, and never opened.
 
-A key-share holder ratifies a round with its acknowledgement in the EA
-key ceremony (see `draft-valargroup-ea-key-ceremony` [^draft-ceremony]),
-which it submits to the vote chain after verifying its share. For this
-purpose the acknowledgement MUST commit to `vote_round_id` as well as to
-$\mathsf{ea}\_\mathsf{pk}$ and the holder's address, and submitting it
-is the holder's statement that it holds a share for the round and will
-take part in its tally. Binding the key keeps a ratification from
-carrying over to a round rekeyed after the fact, and binding the round
-identifier keeps it from carrying over to another round under the same
-key.
+A key-share holder ratifies a round with the acknowledgement it submits
+during the key ceremony, as specified in
+[Election Authority Key Ceremony]. Submitting it is the holder's
+statement that it holds a verified share for the round and will take
+part in its tally.
 
 A round MUST NOT enter ACTIVE until at least $t$ distinct key-share
 holders have ratified it, where $t$ is the round's decryption threshold.
@@ -734,8 +810,8 @@ ratified is visibly departing from a published statement. See
 ### Election Authority Key Custody
 
 **Share generation.** A ceremony that generates the key at a single
-party and distributes shares from it — a trusted dealer, as in
-`draft-valargroup-ea-key-ceremony` [^draft-ceremony] — gives that party
+party and distributes shares from it — a trusted dealer, as specified
+in [Election Authority Key Ceremony] — gives that party
 the full Election Authority private key for the duration of the
 ceremony. The claim that no single party holds it holds only after the
 ceremony completes, and only if the dealer destroyed its copy, which no
@@ -897,8 +973,8 @@ reference:
   `draft-valargroup-nullifier-pir` [^draft-pir].
 - **Proof Verification** (DLEQ verification of partial
   decryptions) and the **Tally** procedure (Lagrange combination
-  and plaintext recovery), in `draft-valargroup-ea-key-ceremony`
-  [^draft-ceremony].
+  and plaintext recovery), in `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol].
 
 A full-node operator combines these procedures to verify a
 voting round across three layers:
@@ -927,7 +1003,7 @@ voting round across three layers:
   Proof Verification to each stored partial decryption,
   re-derives the Lagrange combination, and confirms the
   decrypted aggregate following the Tally procedure in
-  `draft-valargroup-ea-key-ceremony`.
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 The three layers above verify that the transactions in a round are
 well formed and correctly accumulated *with respect to* the round's
@@ -1140,12 +1216,13 @@ told apart from a disagreement about the derivation.
   form would bound the share of ballots, or of voting weight, cast
   through any one implementation, and would bind the deployment that
   publishes the result.
-- **EA key ceremony specification**: `draft-valargroup-ea-key-ceremony`
-  [^draft-ceremony] is not an open proposal, but [Ratification] and
-  [Election Authority Key Custody] depend on it. Its acknowledgement
-  commits to $\mathsf{ea}\_\mathsf{pk}$ and the holder's address but not
-  to `vote_round_id`, and it recommends retaining shares indefinitely,
-  which [Election Authority Key Custody] forbids.
+- **Trusted dealer**: [Election Authority Key Ceremony] specifies a
+  single dealer that holds $\mathsf{ea}\_\mathsf{sk}$ for the duration of
+  key generation and is trusted to erase it. Distributed key generation,
+  or at minimum published verifiable secret sharing commitments, would
+  remove that trust; [Election Authority Key Custody] requires a
+  deployment to name the dealer and recommends the upgrade, but neither
+  is specified here.
 - **Administrator keys**: wallets identify administrator keys as
   `draft-valargroup-shielded-voting-wallet-api` [^draft-wallet-api]
   specifies, but how administrators are chosen, and how their keys are
@@ -1169,8 +1246,6 @@ told apart from a disagreement about the derivation.
 [^draft-voting-protocol]: [Draft ZIP: Zcash Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
 
 [^draft-voting-protocol-vri]: [Draft ZIP: Zcash Shielded Voting Protocol, Section: Voting Round Identifier](draft-valargroup-shielded-voting.md#voting-round-identifier)
-
-[^draft-ceremony]: [Draft ZIP: Election Authority Key Ceremony](draft-valargroup-ea-key-ceremony.md)
 
 [^draft-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
