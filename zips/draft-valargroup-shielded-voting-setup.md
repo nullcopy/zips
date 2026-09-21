@@ -66,10 +66,14 @@ Submission server
   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Election Authority (EA)
-: A virtual signing key, jointly constructed by validators during a key
-  ceremony so that no single party holds the private key. Used to encrypt
-  vote shares and decrypt the final tally. See
-  [Election Authority Key Ceremony] for the ceremony protocol.
+: The El Gamal keypair under which a round's vote shares are encrypted,
+  and whose private key decrypts the aggregate tally. A fresh keypair is
+  generated for each round, and its private key is split into shares
+  distributed to key-share holders, so that decrypting the tally requires
+  a threshold of them acting together. See
+  [Election Authority Key Ceremony] for how the keypair is generated and
+  distributed, and [Election Authority Key Custody] for what the party
+  generating it holds while it does so.
 
 Key-share holder
 : A holder of a share of a round's Election Authority private key.
