@@ -186,13 +186,23 @@ without revealing which one. Blinded per-share commitments prevent
 observers from recomputing $\mathsf{shares}\_\mathsf{hash}$ from on-chain
 ciphertexts and linking revealed shares back to a specific VC.
 
-**Trust assumptions.** After the key ceremony, no single party holds
-$\mathsf{ea}\_\mathsf{sk}$; each validator holds only a Shamir share. An
-adversary must compromise at least $t$ validators (where
-$t = \lceil n/2 \rceil + 1$) to reconstruct the key and decrypt
-individual share ciphertexts. Even with access to the full key, privacy
-against the EA relies on vote splitting: the EA would see encrypted
-shares but cannot link them to specific voters or vote commitments.
+**Trust assumptions.** Once the key ceremony has completed and the party
+that generated $\mathsf{ea}\_\mathsf{sk}$ has erased it, no single party
+holds it: each key-share holder holds only a Shamir share. That erasure
+is not verifiable by any other party; see the "Election Authority Key
+Custody" section of `draft-valargroup-shielded-voting-setup`
+[^voting-setup]. An adversary must obtain at least $t$ shares to
+reconstruct the key and decrypt individual share ciphertexts, where $t$
+and the holder set are specified in that document.
+
+Vote splitting does not substitute for that threshold. A party holding
+$t$ shares can decrypt any individual share ciphertext, and the
+Share Submission Payload (see [Share Submission]) carries values that
+are identical across all
+$N_s$ payloads of one vote, so a party that receives two or more of them
+can group them without timing analysis — as described immediately below
+for submission servers. Splitting raises the number of parties that must
+cooperate; it does not make individual amounts unrecoverable.
 Submission servers learn the encrypted share ciphertext, blind factor,
 and blinded share commitments for each share they submit, along with
 the proposal identifier and vote decision. They cannot decrypt
