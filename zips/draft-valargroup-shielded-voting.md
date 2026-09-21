@@ -1712,7 +1712,7 @@ following. They are ordered so that each step presupposes the ones
 above it.
 
 1. **Round configuration.** The round's snapshot roots are correct, as
-   established by the procedure in the "Snapshot Recomputation" section
+   established by the procedure in the "Snapshot Derivation" section
    of `draft-valargroup-shielded-voting-setup` [^voting-setup]. This is
    not verifiable from vote chain state, because the roots are supplied
    as input at round creation rather than derived by consensus. A
