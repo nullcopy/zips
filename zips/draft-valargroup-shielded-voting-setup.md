@@ -557,7 +557,7 @@ coordinated activities:
    the chain whose block at height $H$ has hash
    $\mathsf{snapshot}\_\mathsf{blockhash}$. No party has discretion over
    their values. The poll runner derives them by the procedure in
-   [Snapshot Recomputation].
+   [Snapshot Derivation].
 
 2. **Ensure the nullifier service has the snapshot's PIR
    database.** The poll runner coordinates with each nullifier
@@ -574,31 +574,60 @@ coordinated activities:
    [Poll Creation]) so that on-chain verifiers and wallet
    clients use them as ZKP public inputs.
 
-### Snapshot Recomputation
+### Snapshot Derivation
 
 This procedure defines what it means for a round's snapshot roots to be
-correct. Any party with a Zcash full node MUST be able to perform it:
+correct, and how a party obtains them. Both roots are properties of
+Zcash mainnet state at $(H, \mathsf{snapshot}\_\mathsf{blockhash})$, and
+both are read from a Zcash consensus node that has validated the chain
+to at least that height. No party reconstructs either tree from the
+Zcash chain or from its leaves.
 
 1. Confirm that the block at height $H$ on the node's best chain has
    hash $\mathsf{snapshot}\_\mathsf{blockhash}$. If it does not, the
    round is not well formed.
-2. Derive $\mathsf{nc}\_\mathsf{root}$ as the Orchard note commitment
-   tree root as of the end of block $H$.
-3. Collect every Orchard nullifier revealed in a block at height at most
-   $H$ on the best chain, construct the nullifier non-membership tree
-   over that set as specified in `draft-valargroup-orchard-balance-proof`
-   [^draft-balance-proof], and derive its root.
-4. Compare both derived values with the round's
-   $\mathsf{nc}\_\mathsf{root}$ and
-   $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$.
+2. Obtain $\mathsf{nc}\_\mathsf{root}$: the Orchard note commitment
+   tree root as of the end of block $H$. This is Zcash consensus data.
+   A node computes it while validating the chain and exposes it as the
+   Orchard anchor at that height.
+3. Obtain $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$: the root
+   of the nullifier non-membership tree over every Orchard nullifier
+   revealed at or before $H$, constructed as specified in
+   `draft-valargroup-orchard-balance-proof` [^draft-balance-proof].
+   Zcash consensus does not commit to this tree; a node maintains it as
+   an index over the nullifier set it already tracks, and serves its
+   root.
+4. Compare both values with the round's $\mathsf{nc}\_\mathsf{root}$
+   and $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$.
 
-A round is **well formed** if all four steps succeed. The set in step 3
-is correct only if it holds every nullifier revealed at or before $H$
-and nothing else: an implementation that derives it incrementally MUST
-handle chain reorganisations as specified for the nullifier service's
-ingest pipeline in `draft-valargroup-nullifier-pir` [^draft-pir], and
-MUST NOT produce a root for $H$ until it has confirmed that the block it
-ingested at $H$ has hash $\mathsf{snapshot}\_\mathsf{blockhash}$.
+A round is **well formed** if all four steps succeed.
+
+**Who performs it.** The poll runner MUST perform it before publishing a
+round's roots. Each administrator MUST perform it against a node under
+its own control before attesting to a round (see [Round Attestation]).
+Any party MAY perform it. Wallets are not required to: a wallet
+authenticates the round configuration and binds it to the chain round as
+specified in `draft-valargroup-shielded-voting-wallet-api`
+[^draft-wallet-api], and derives no roots of its own.
+
+**Node requirements.** A deployment MUST identify the Zcash node
+implementations and versions it relies on to serve
+$\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ (see [Deployment]).
+Because that root is not consensus data, two node implementations can
+disagree about it with no Zcash consensus rule to settle the
+disagreement. The construction specified in
+`draft-valargroup-orchard-balance-proof` [^draft-balance-proof] is the
+sole authority: a party that obtains differing roots for the same
+$(H, \mathsf{snapshot}\_\mathsf{blockhash})$ from independent nodes MUST
+treat the round as not well formed until the discrepancy is resolved.
+
+The served root is correct only if the tree behind it covers every
+Orchard nullifier revealed at or before $H$ and nothing else. A node
+maintaining that index incrementally MUST handle chain reorganisations
+as specified for the nullifier service's ingest pipeline in
+`draft-valargroup-nullifier-pir` [^draft-pir], and MUST NOT serve a root
+for $H$ until it has confirmed that the block it ingested at $H$ has
+hash $\mathsf{snapshot}\_\mathsf{blockhash}$.
 
 ### Poll Creation
 
@@ -667,13 +696,13 @@ other signature the same key may produce, and its version is that of
 the vote configuration format that carries the attestation.
 
 An administrator MUST NOT sign a round unless it has performed
-[Snapshot Recomputation] for that round, using a Zcash full node under
+[Snapshot Derivation] for that round, using a Zcash full node under
 its own control, and obtained the round's $\mathsf{nc}\_\mathsf{root}$
 and $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$. Agreement with
 another party's copy of the configuration does not satisfy this:
 comparing two copies of the same values establishes only that two
 parties received the same input, not that the input is correct. See
-[Why Snapshot Roots Are Recomputed].
+[Why Snapshot Roots Are Independently Derived].
 
 ### Round Lifecycle
 
@@ -1015,7 +1044,7 @@ A full-node operator therefore does not need to trust another
 participant for the three layers above, but does depend on the
 snapshot roots being correct, which this chain does not establish.
 Confirming that requires recomputing both roots from Zcash mainnet
-state by the procedure in [Snapshot Recomputation], which also
+state by the procedure in [Snapshot Derivation], which also
 establishes that the round is well formed. A verification of a round is
 incomplete without it.
 
@@ -1059,20 +1088,31 @@ checkable: with the operator of each role published, anyone can verify
 that the three sets are disjoint, which is not possible when one
 binary performs all three.
 
-## Why Snapshot Roots Are Recomputed
+## Why Snapshot Roots Are Independently Derived
 
 Requiring more administrators to sign a round does not, on its own, make
-its snapshot roots any more likely to be correct. If no signer derives
+its snapshot roots any more likely to be correct. If no signer obtains
 the roots independently, a threshold of signatures attests only that
 several parties received the same document from the same source. An
 incorrect nullifier root is not a remote failure: if the set behind it
 omits a nullifier revealed on Zcash mainnet before the snapshot, the
 holder of the spent note can prove it unspent and vote with it as well
-as with the note that replaced it, and an ingest pipeline that mishandles
-a chain reorganisation can produce such a set with no malice involved.
-Recomputation is what makes attestation meaningful: a signature
+as with the note that replaced it, and an index that mishandles a chain
+reorganisation can produce such a set with no malice involved.
+Independent derivation is what makes attestation meaningful: a signature
 threshold multiplies an underlying check, and without the check there is
 nothing to multiply.
+
+Independence here is a property of the source, not of the effort. Each
+administrator reads both roots from a Zcash node under its own control,
+rather than accepting values supplied by the party proposing the round.
+Because the node already serves as that administrator's oracle for Zcash
+state — it is trusted for the block hash at $H$ and for
+$\mathsf{nc}\_\mathsf{root}$ regardless — serving
+$\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ alongside them adds
+no trust assumption that attesting did not already carry. It does add a
+dependency on node implementations maintaining that index, which
+[Snapshot Derivation] requires a deployment to name.
 
 ## Why Bind to a Block Hash
 
@@ -1098,13 +1138,14 @@ opens is an input the voter can act on.
 The complete remedy is for the vote chain to compute the snapshot roots
 itself, so that they are consensus data rather than an input and no
 verifier depends on administrators having performed
-[Snapshot Recomputation]. That requires every validator to follow Zcash
-mainnet state and implement both tree constructions: a change to the
-vote chain's consensus rules, which this document does not make. The
+[Snapshot Derivation]. That requires every validator to follow Zcash
+mainnet state, by running a Zcash node or trusting one, and to agree on
+the value it reports: a change to the vote chain's consensus rules,
+which this document does not make. The
 roots are specified so that the change remains available. They are
 deterministic functions of Zcash consensus state with an explicit
 derivation procedure, so adding validation later means validators
-implementing [Snapshot Recomputation], not redefining the roots. Until
+implementing [Snapshot Derivation], not redefining the roots. Until
 then a round's snapshot is only as correct as administrators' adherence
 to [Round Attestation], and this document states that dependency rather
 than leaving it implicit.
@@ -1165,6 +1206,7 @@ to a reader of this document.
 | Stake distribution across validators | Determines the coalition size required to exclude transactions; see [Transaction Inclusion]. |
 | The decryption threshold $t$ and holder count $n$ | Bounds every amount-privacy claim in the protocol. |
 | Software versions for the chain, circuits and client library | Required to reproduce or audit a round. |
+| Zcash node implementations and versions relied on for $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ | That root is not Zcash consensus data, so which implementation served it is part of what a verifier checks; see [Snapshot Derivation]. |
 | The administrators and their signing keys | Establishes whose attestations wallets recognise; see [Round Attestation]. |
 | The administrator signature threshold $m$ | At least 2; see [Round Attestation]. |
 | $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
