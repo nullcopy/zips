@@ -244,8 +244,11 @@ see [^pir-governance].
 
 - The consensus mechanism and operational parameters of the vote chain.
 - The election authority key ceremony (generation, threshold sharing,
-  and distribution of $\mathsf{ea}\_\mathsf{sk}$ shares) is specified separately
-  in [^ea-ceremony].
+  and distribution of $\mathsf{ea}\_\mathsf{sk}$ shares) is specified
+  separately in `draft-valargroup-shielded-voting-setup`
+  [^voting-setup]. This ZIP specifies the cryptographic constructions
+  that ceremony uses; see [El Gamal Encryption on Pallas] and
+  [ECIES on Pallas].
 - The operational process for conducting a coinholder vote (validator
   setup, poll creation, deadlines) is out of scope; it is specified
   in [^voting-setup].
@@ -299,7 +302,7 @@ validators produce partial decryptions of the aggregate ciphertext per
 (proposal, decision) pair. The partial decryptions are stored on-chain
 and combined via Lagrange interpolation to recover the total ballot
 count (via the bounded discrete-log recovery procedure defined
-in [^ea-ceremony]). Correctness is publicly
+in [Decryption]). Correctness is publicly
 verifiable: anyone can recompute the Lagrange combination from the
 on-chain partial decryptions.
 
@@ -309,15 +312,145 @@ on-chain partial decryptions.
 ## El Gamal Encryption on Pallas
 
 The protocol uses additively homomorphic El Gamal encryption over the
-Pallas curve to encrypt vote share amounts. The scheme — including
-setup, encryption, additive homomorphism, and decryption — is defined
-in [^ea-ceremony]. This ZIP uses the notation established there: $G$ is
-the Pallas $\mathsf{SpendAuthSig}^{\mathsf{Orchard}}$
-generator [^protocol-concretespendauthsig],
-$\mathsf{ea}\_\mathsf{pk} = [\mathsf{ea}\_\mathsf{sk}]\, G$ is the election
-authority's public key for the current voting round, and a ciphertext is
-a pair of Pallas points $(C_1, C_2)$ where
-$\mathsf{Enc}(v, r) = \bigl([r]\, G,\; [v]\, G + [r]\, \mathsf{ea}\_\mathsf{pk}\bigr)$.
+Pallas curve to encrypt vote share amounts.
+
+### Setup
+
+Let $G$ be the Pallas $\mathsf{SpendAuthSig}^{\mathsf{Orchard}}$
+generator [^protocol-concretespendauthsig], and let $\mathbb{F}_q$ denote
+the scalar field of the Pallas curve [^protocol-pallasandvesta]. The
+election authority keypair for a voting round is:
+
+- $\mathsf{ea}\_\mathsf{sk} \in \mathbb{F}_q$ — a scalar sampled
+  uniformly at random;
+- $\mathsf{ea}\_\mathsf{pk} = [\mathsf{ea}\_\mathsf{sk}]\, G$ — the
+  corresponding public key.
+
+Every El Gamal and ECIES operation specified in this ZIP MUST use this
+generator. Using any other point would break the additive homomorphism
+that [Tally] depends on, and would make ciphertexts incompatible with
+the [Vote Reveal Proof] circuit.
+
+The keypair is generated afresh for each round by the key ceremony
+specified in `draft-valargroup-shielded-voting-setup` [^voting-setup].
+That document also specifies how $\mathsf{ea}\_\mathsf{sk}$ is shared
+among key-share holders, and is the normative reference for the
+threshold $t$ used in [Tally].
+
+### Encryption
+
+To encrypt a ballot count $v$ (see [Tally units]) under randomness
+$r \leftarrow \mathbb{F}_q$:
+
+$$\mathsf{Enc}(v, r) = \bigl([r]\, G,\; [v]\, G + [r]\, \mathsf{ea}\_\mathsf{pk}\bigr)$$
+
+The ciphertext is a pair of Pallas points $(C_1, C_2)$. The randomness
+$r$ MUST be sampled with a CSPRNG and MUST NOT be reused across
+ciphertexts.
+
+### Additive Homomorphism
+
+Component-wise point addition of two ciphertexts yields a valid
+encryption of the sum of their plaintexts:
+
+$$\mathsf{Enc}(a, r_1) + \mathsf{Enc}(b, r_2) = \mathsf{Enc}(a + b,\; r_1 + r_2)$$
+
+This is what allows the vote chain to aggregate revealed share
+ciphertexts into a per-$(\mathsf{proposal}\_\mathsf{id},
+\mathsf{vote}\_\mathsf{decision})$ accumulator without decrypting any
+of them, and it is why no party needs $\mathsf{ea}\_\mathsf{sk}$ before
+the voting window closes.
+
+### Decryption
+
+Given an aggregate ciphertext $(C_{1,\mathsf{agg}}, C_{2,\mathsf{agg}})$
+and $\mathsf{ea}\_\mathsf{sk}$:
+
+$$C_{2,\mathsf{agg}} - [\mathsf{ea}\_\mathsf{sk}]\, C_{1,\mathsf{agg}} = [\mathsf{total}\_\mathsf{value}]\, G$$
+
+Recovering $\mathsf{total}\_\mathsf{value}$ from
+$[\mathsf{total}\_\mathsf{value}]\, G$ requires a bounded discrete
+logarithm search, for which baby-step giant-step is sufficient: the
+plaintext is a ballot count, bounded above by the total ZEC supply
+divided by the ballot unit (see [Tally units]).
+
+This operation is never performed with a reconstructed
+$\mathsf{ea}\_\mathsf{sk}$ in normal operation; [Tally] specifies the
+threshold procedure that computes
+$[\mathsf{ea}\_\mathsf{sk}]\, C_{1,\mathsf{agg}}$ without any party
+holding the secret key.
+
+
+## Chaum-Pedersen DLEQ Proofs
+
+Correct use of secret key material during threshold decryption is
+demonstrated with a non-interactive Chaum-Pedersen proof of
+discrete-logarithm equality [^chaum-pedersen], instantiated over Pallas
+with a Fiat-Shamir challenge derived from BLAKE2b-256 [^blake2].
+
+**Statement.** Given Pallas point pairs $(G, P)$ and $(H, Q)$, a DLEQ
+proof demonstrates $\log_G(P) = \log_H(Q)$: that a single scalar $x$
+satisfies both $P = [x]\, G$ and $Q = [x]\, H$.
+
+A proof is a pair of Pallas scalars $(e, z)$, serialized as 64 bytes
+($e \mathbin\| z$, 32 bytes each, each a canonical little-endian
+encoding of an element of $\mathbb{F}_q$).
+
+### Challenge Derivation
+
+$$e = \mathsf{HashToScalar}\bigl(\texttt{"svote-dleq-v1"} \mathbin\| \mathsf{repr}(G) \mathbin\| \mathsf{repr}(P) \mathbin\| \mathsf{repr}(H) \mathbin\| \mathsf{repr}(Q) \mathbin\| \mathsf{repr}(R_1) \mathbin\| \mathsf{repr}(R_2)\bigr)$$
+
+where $\mathsf{repr}$ is the 32-byte compressed affine encoding of a
+Pallas point and $\mathsf{HashToScalar}$ applies unkeyed BLAKE2b-256
+to the concatenation and maps the resulting 32-byte digest to an
+element of $\mathbb{F}_q$. The domain separator
+$\texttt{"svote-dleq-v1"}$ (13 bytes, ASCII) prevents challenges from
+being reused across protocols.
+
+### Proof Generation
+
+A prover holding $x$ computes:
+
+1. Sample $k \leftarrow \mathbb{F}_q$ uniformly at random, using a
+   CSPRNG.
+2. $R_1 = [k]\, G$ and $R_2 = [k]\, H$.
+3. $e = \mathsf{DLEQChallenge}(G, P, H, Q, R_1, R_2)$ per
+   [Challenge Derivation].
+4. $z = k + e \cdot x$.
+5. Output $(e, z)$.
+
+### Proof Verification
+
+A verifier given $(G, P, H, Q)$ and a proof $(e, z)$ MUST:
+
+1. Parse $e$ and $z$ as canonical elements of $\mathbb{F}_q$, rejecting
+   any non-canonical encoding, and validate $G$, $P$, $H$ and $Q$ as
+   points on the Pallas curve.
+2. Compute $R_1 = [z]\, G - [e]\, P$ and $R_2 = [z]\, H - [e]\, Q$.
+3. Compute $e' = \mathsf{DLEQChallenge}(G, P, H, Q, R_1, R_2)$.
+4. Accept if and only if $e' = e$.
+
+
+## ECIES on Pallas
+
+Distribution of key shares to their holders uses ECIES [^ecies]
+instantiated on Pallas:
+
+- **Key encapsulation**: ephemeral Diffie-Hellman on Pallas with
+  generator $G$.
+- **Key derivation**: $k = \mathsf{SHA256}\bigl(\mathsf{repr}(E) \mathbin\| \mathsf{x}(S)\bigr)$,
+  where $E$ is the ephemeral public key, $S$ the shared secret point,
+  $\mathsf{repr}$ the 32-byte compressed encoding, and $\mathsf{x}(S)$
+  the $x$-coordinate obtained by taking that encoding and clearing
+  bit 7 of byte 31 (the sign bit).
+- **Symmetric encryption**: ChaCha20-Poly1305 with an all-zero nonce.
+
+A fresh ephemeral scalar MUST be generated for each recipient; reusing
+one across recipients would correlate their encapsulations and, with
+the zero nonce, would reuse a symmetric key across messages. The
+recipient MUST verify its decrypted share against the sender's
+published verification key, as specified in
+`draft-valargroup-shielded-voting-setup` [^voting-setup].
 
 
 ## Data Structures
@@ -1008,7 +1141,7 @@ $$0 \leq \mathsf{v}\_\mathsf{i} < 2^{30} \quad \text{for each } i \in \{0 \ldots
 This bound is critical for two reasons: (1) it ensures the base-field
 share sum and the scalar-field El Gamal encoding agree (no modular
 reduction in either field), and (2) it keeps the aggregate discrete log
-small enough for efficient recovery at tally time (see [^ea-ceremony]).
+small enough for efficient recovery at tally time (see [Decryption]).
 
 **Condition 10: Shares hash integrity.** The circuit MUST enforce that
 the blinded share commitments and their aggregate hash are correctly
@@ -1439,10 +1572,72 @@ instead, which requires under a second of proof construction. See
 
 ## Tally
 
-After the voting window closes, the vote chain MUST decrypt the per-
-$(\mathsf{proposal}\_\mathsf{id}, \mathsf{vote}\_\mathsf{decision})$
-aggregate ciphertexts using the threshold decryption procedure
-specified in [^ea-ceremony].
+After the voting window closes, each per-$(\mathsf{proposal}\_\mathsf{id},
+\mathsf{vote}\_\mathsf{decision})$ aggregate ciphertext is decrypted by a
+threshold procedure. No party reconstructs
+$\mathsf{ea}\_\mathsf{sk}$ at any point.
+
+Let $t$ be the round's decryption threshold and let each key-share
+holder $i$ hold a Shamir share [^shamir] $f(i)$ of
+$\mathsf{ea}\_\mathsf{sk}$, with published verification key
+$\mathsf{VK}_i = [f(i)]\, G$. The generation and distribution of these
+shares, the value of $t$, and the identity of the holders are specified
+in `draft-valargroup-shielded-voting-setup` [^voting-setup].
+
+### Aggregation
+
+For each $(\mathsf{proposal}\_\mathsf{id},
+\mathsf{vote}\_\mathsf{decision})$ pair, the aggregate ciphertext
+$(C_{1,\mathsf{agg}}, C_{2,\mathsf{agg}})$ is the component-wise sum of
+every revealed share ciphertext accepted for that pair, per
+[Additive Homomorphism]. Aggregation is publicly verifiable: anyone
+holding the chain's share reveal transactions can replay it.
+
+### Partial Decryption
+
+At least $t$ key-share holders each publish a partial decryption
+
+$$D_i = [f(i)]\, C_{1,\mathsf{agg}}$$
+
+Each $D_i$ MUST be accompanied by a Chaum-Pedersen DLEQ proof, as
+specified in [Chaum-Pedersen DLEQ Proofs], instantiated with
+$P = \mathsf{VK}_i$, $H = C_{1,\mathsf{agg}}$, $Q = D_i$ and witness
+$x = f(i)$. The proof demonstrates
+$\log_G(\mathsf{VK}_i) = \log_{C_{1,\mathsf{agg}}}(D_i)$, establishing
+that the share behind the holder's published verification key is the
+share used to compute $D_i$.
+
+A partial decryption whose proof does not verify MUST be rejected and
+MUST NOT be included in the combination below. Without this check a
+single holder could publish a bogus $D_i$, and the resulting
+combination would yield a point whose discrete logarithm search fails
+or returns an unrelated value, with no indication of which holder was
+responsible.
+
+### Combination
+
+Given verified partial decryptions $\{(i, D_i)\}$ from a set $S$ with
+$|S| \ge t$, the Lagrange coefficients at $0$ are
+
+$$\lambda_i = \prod_{j \in S,\, j \neq i} \frac{-j}{i - j}$$
+
+and the combination in the exponent recovers
+
+$$[\mathsf{ea}\_\mathsf{sk}]\, C_{1,\mathsf{agg}} = \sum_{i \in S} [\lambda_i]\, D_i$$
+
+from which the aggregate plaintext follows by [Decryption]:
+
+$$[\mathsf{total}\_\mathsf{value}]\, G = C_{2,\mathsf{agg}} - [\mathsf{ea}\_\mathsf{sk}]\, C_{1,\mathsf{agg}}$$
+
+$\mathsf{total}\_\mathsf{value}$ is then recovered by baby-step giant-step
+and published for that $(\mathsf{proposal}\_\mathsf{id},
+\mathsf{vote}\_\mathsf{decision})$ pair, in the units specified in
+[Tally units].
+
+Only the aggregate is decrypted. No step of this procedure reveals an
+individual vote amount — but see [Privacy Implications] for what a
+coalition holding $t$ shares can do outside this procedure, and
+[Verification] for what a published tally does and does not establish.
 
 
 ## Vote Chain
@@ -1536,7 +1731,7 @@ above it.
    reveal transactions.
 5. **Decryption.** The published per-option totals are the decryptions
    of those accumulators, as attested by the threshold decryption
-   proofs specified in [^ea-ceremony].
+   proofs specified in [Partial Decryption].
 6. **Unit.** The published figures are interpreted in the unit in which
    they are denominated; see [Ballot Scaling] and [Tally units].
 
@@ -1588,7 +1783,7 @@ non-membership tree in [^balance-proof].
 Expressing vote values in ballots ($\lfloor \text{zatoshi} / 12{,}500{,}000 \rfloor$) rather
 than raw zatoshi reduces bit-width throughout the protocol: El Gamal
 scalar multiplications are faster, range checks are tighter, and the
-discrete-log recovery at tally time [^ea-ceremony] has a smaller
+discrete-log recovery at tally time (see [Decryption]) has a smaller
 search space.
 The 0.125 ZEC minimum also prevents dust delegations from bloating vote
 chain state.
@@ -2057,7 +2252,13 @@ on active rows.
 
 ## Why Threshold Secret Sharing
 
-See [^ea-ceremony] for the rationale behind threshold secret sharing.
+The election authority key is split into Shamir shares [^shamir] rather
+than held intact, so that compromise of any set of holders smaller than
+$t$ does not expose $\mathsf{ea}\_\mathsf{sk}$ and therefore cannot
+open an individual share ciphertext. The choice of $t$, and the
+requirement that the number of holders confirming the ceremony be at
+least $t$ so that the tally remains possible, are specified in
+`draft-valargroup-shielded-voting-setup` [^voting-setup].
 
 ## Why a Send-Based VAN Model
 
@@ -2100,8 +2301,14 @@ would shift in favor of removing the VAN. See [Open issues].
 
 ## Why Classical El Gamal Rather Than Post-Quantum Encryption
 
-See [^ea-ceremony] for the rationale behind using classical El Gamal
-rather than post-quantum encryption. The key consequence for this
+El Gamal on Pallas is used because it is additively homomorphic, which
+[Tally] requires, and because it reuses a curve already present in
+Orchard. It is not post-quantum: an adversary running Shor's algorithm
+could recover $\mathsf{ea}\_\mathsf{sk}$ from
+$\mathsf{ea}\_\mathsf{pk}$ and decrypt individual share ciphertexts for
+any round whose ciphertexts were recorded. No aggregatable
+post-quantum encryption scheme suitable for this construction is
+available at the time of writing. The key consequence for this
 protocol is that vote-amount privacy has a finite horizon tied to
 quantum computing timelines, while voter *identity* is unaffected
 (alternate nullifier unlinkability relies on Poseidon preimage
@@ -2200,7 +2407,8 @@ the implementation.
   this; see [Why Randomized Share Decomposition].
 - **Threshold.** The decryption threshold stated in companion documents
   and the threshold used in deployment have differed. The value in use
-  MUST be published; see [^ea-ceremony].
+  MUST be published; see `draft-valargroup-shielded-voting-setup`
+  [^voting-setup].
 
 
 # Reference implementation
@@ -2263,7 +2471,8 @@ the implementation.
   them. Neither is specified. Until one is, the privacy properties of
   the two submission paths differ materially and clients should prefer
   [Direct Submission].
-- Open issues related to the EA key ceremony are tracked in [^ea-ceremony].
+- Open issues related to the EA key ceremony are tracked in
+  `draft-valargroup-shielded-voting-setup` [^voting-setup].
 - Voters have no privacy-preserving way to confirm that their shares
   were included on the vote chain. A voter can observe the chain, but
   querying it for their own share nullifiers reveals which nullifiers
@@ -2292,13 +2501,19 @@ the implementation.
 
 [^bip39]: [M. Palatinus, P. Rusnak, A. Voisine, and S. Bowe, "BIP 39: Mnemonic code for generating deterministic keys", 2013](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki)
 
+[^shamir]: [A. Shamir, "How to share a secret", Communications of the ACM, vol. 22, no. 11, pp. 612-613, 1979](https://doi.org/10.1145/359168.359176)
+
+[^chaum-pedersen]: [D. Chaum and T. P. Pedersen, "Wallet Databases with Observers", CRYPTO 1992](https://link.springer.com/chapter/10.1007/3-540-48071-4_7)
+
+[^ecies]: [V. Shoup, "A Proposal for an ISO Standard for Public Key Encryption", version 2.1, 2001](https://www.shoup.net/papers/iso-2_1.pdf)
+
+[^blake2]: [J.-P. Aumasson, S. Neves, Z. Wilcox-O'Hearn, and C. Winnerlein, "BLAKE2: simpler, smaller, fast as MD5", 2013](https://blake2.net/blake2.pdf)
+
 [^poseidon]: [Poseidon: A New Hash Function for Zero-Knowledge Proof Systems](https://eprint.iacr.org/2019/458)
 
 [^balance-proof]: [Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
 
 [^pir-governance]: [Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
-
-[^ea-ceremony]: [Election Authority Key Ceremony](draft-valargroup-ea-key-ceremony.md)
 
 [^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318.md)
 
