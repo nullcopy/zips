@@ -70,7 +70,7 @@ The shielded voting protocol involves multiple ZIPs that specify the
 cryptographic circuits [^voting-protocol], nullifier retrieval
 [^nullifier-pir], proof-of-balance [^orchard-balance-proof], share
 submission [^voting-protocol], and election authority key ceremony
-[^ea-ceremony]. A wallet integrator currently must read several of these
+[^voting-setup]. A wallet integrator currently must read several of these
 specifications to understand which endpoints to call, what wire formats
 to use, and how to discover an active vote.
 
@@ -424,7 +424,8 @@ The response may contain additional fields related to the EA key
 ceremony and threshold decryption (e.g., ceremony status, validator
 keys, ECIES payloads). These fields exist for validator coordination
 and have no bearing on wallet operations, so they are not documented
-here. See [^ea-ceremony] for details.
+here. See `draft-valargroup-shielded-voting-setup` [^voting-setup] for
+details.
 
 The `proposals` field in the VoteRound response contains the same
 proposals as the vote configuration document. The `proposals_hash`
@@ -1075,7 +1076,5 @@ is available at
 
 
 [^orchard-balance-proof]: [Draft ZIP: Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
-
-[^ea-ceremony]: [Draft ZIP: Election Authority Key Ceremony](draft-valargroup-ea-key-ceremony.md)
 
 [^zip-244]: [ZIP 244: Transaction Identifier Non-Malleability](zip-0244.rst)
