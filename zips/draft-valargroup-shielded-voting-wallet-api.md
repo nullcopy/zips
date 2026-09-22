@@ -67,8 +67,8 @@ the encoding conventions for all exchanged data.
 # Motivation
 
 The shielded voting protocol involves multiple ZIPs that specify the
-cryptographic circuits [^voting-protocol], nullifier retrieval
-[^nullifier-pir], proof-of-balance [^orchard-balance-proof], share
+cryptographic circuits [^voting-protocol], proof-of-balance
+[^orchard-balance-proof], share
 submission [^voting-protocol], and election authority key ceremony
 [^voting-setup]. A wallet integrator currently must read several of these
 specifications to understand which endpoints to call, what wire formats
@@ -157,11 +157,12 @@ See [Version Handling] for the normative rules.
 
 ## Delegation
 
-5. **Retrieve nullifier exclusion proofs.** Connect to a
-   `pir_endpoints` server and retrieve Merkle non-membership proofs
-   for the wallet's Orchard note nullifiers at `snapshot_height`.
-   See [Private Information Retrieval Nullifier Exclusion Proofs]
-   and [^nullifier-pir].
+5. **Obtain nullifier exclusion proofs.** Obtain Merkle
+   non-membership proofs for the wallet's Orchard note nullifiers at
+   `snapshot_height`. A wallet holding the nullifier set at that
+   height constructs them itself; otherwise it retrieves them from a
+   `pir_endpoints` server. See
+   [Nullifier Exclusion Proof Retrieval].
 
 6. **Construct and submit delegation transaction.** Build the ZKP1
    proof (proving Orchard note ownership at the snapshot height) and
@@ -812,12 +813,28 @@ are specified in [^voting-protocol]. Wallet clients interact with the
 tree through the query endpoints defined in [Commitment Tree (Latest)],
 [Commitment Tree at Height], and [Commitment Tree Leaves].
 
-## Private Information Retrieval Nullifier Exclusion Proofs
+## Nullifier Exclusion Proof Retrieval
 
-Nullifier exclusion proofs are retrieved using the PIR protocol
-specified in [^nullifier-pir]. The wallet connects to one of the
-`pir_endpoints` from the vote configuration; version selection
-follows the rules in [Version Handling].
+A nullifier exclusion proof is a Merkle non-membership proof for a
+note's standard Orchard nullifier against the snapshot's nullifier
+non-membership tree, whose construction is specified in
+[^orchard-balance-proof].
+
+A wallet that holds the set of Orchard nullifiers revealed at or before
+`snapshot_height` — for example because it has scanned the chain over
+that range — constructs the proof itself and contacts no server. This
+is the RECOMMENDED path: asking a server for the proof reveals which
+nullifier was asked about, and therefore which note the wallet holds,
+to a party that learns nothing otherwise.
+
+A wallet that does not hold the set MAY retrieve the proof from one of
+the `pir_endpoints` published in the vote configuration. The retrieval
+protocol such a server offers, and whether it conceals the queried
+nullifier from the server, are properties of the deployment and are not
+specified here; version selection follows [Version Handling]. A wallet
+using this path MUST NOT present it to the user as equivalent in
+privacy to constructing the proof locally, unless the server's protocol
+conceals the query.
 
 ## Client Privacy Requirements
 
@@ -1067,8 +1084,6 @@ is available at
 [^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318.md)
 
 [^voting-protocol]: [Draft ZIP: Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
-
-[^nullifier-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
 [^voting-setup]: [Draft ZIP: Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup.md)
 
