@@ -222,9 +222,12 @@ address the correlation channel, because the correlating values are
 carried in the payload itself.
 
 **Non-membership tree queries.** Obtaining exclusion proofs for the
-nullifier non-membership tree during delegation requires querying a data
-source. Private information retrieval mitigates this leakage;
-see [^pir-governance].
+nullifier non-membership tree during delegation requires a source for
+that tree's leaves. A client that holds the nullifier set at the
+snapshot height constructs its own exclusion proof and reveals nothing.
+A client that queries a server for one reveals which nullifier it asked
+about, and therefore which note it holds, unless that server's retrieval
+protocol conceals the query.
 
 
 # Requirements
@@ -272,8 +275,10 @@ see [^pir-governance].
   does not state them.
 - Post-quantum security of the El Gamal encryption layer is out of
   scope.
-- Privacy-preserving retrieval of nullifier non-membership proofs is
-  specified separately in [^pir-governance].
+- Retrieval of nullifier non-membership proofs by clients that do not
+  hold the nullifier set. The tree itself is specified in
+  [^balance-proof]; how a client obtains a proof against it without
+  revealing which nullifier it asked about is a deployment concern.
 
 
 # High-level summary
@@ -2486,8 +2491,8 @@ the implementation.
 - Voters have no privacy-preserving way to confirm that their shares
   were included on the vote chain. A voter can observe the chain, but
   querying it for their own share nullifiers reveals which nullifiers
-  are theirs. A PIR-based confirmation mechanism built on
-  [^pir-governance] would close this; adapting it for share nullifier
+  are theirs. A private-retrieval confirmation mechanism would close
+  this; adapting one for share nullifier
   queries requires additional specification. Until then, a voter cannot
   verify their own vote was counted, and omission of a share is not
   detectable by the voter who cast it.
@@ -2522,8 +2527,6 @@ the implementation.
 [^poseidon]: [Poseidon: A New Hash Function for Zero-Knowledge Proof Systems](https://eprint.iacr.org/2019/458)
 
 [^balance-proof]: [Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
-
-[^pir-governance]: [Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
 
 [^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318.md)
 
