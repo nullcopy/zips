@@ -86,9 +86,7 @@ Snapshot height
 For definitions of cryptographic terms including *alternate nullifier*,
 *nullifier non-membership tree*, *nullifier domain*, *pool snapshot*, and
 *claim*, see the Orchard Proof-of-Balance ZIP [^draft-balance-proof]. For
-EA key ceremony terms, see [Election Authority Key Ceremony]. For
-PIR-related terms, see
-`draft-valargroup-nullifier-pir` [^draft-pir].
+EA key ceremony terms, see [Election Authority Key Ceremony].
 
 
 # Abstract
@@ -348,13 +346,14 @@ than assumed.
 
 ### Nullifier Service Operator
 
-A nullifier service operator runs the nullifier exclusion PIR
-server that wallet clients query to obtain Merkle non-membership
-proofs for the Zcash mainnet nullifier set at the snapshot
-height. The PIR server is a separate binary, distributed
-independently of the vote chain node, with its own ingest pipeline
-and HTTP query endpoint. Specified in
-`draft-valargroup-nullifier-pir` [^draft-pir].
+A nullifier service operator runs a server from which wallet clients
+MAY obtain Merkle non-membership proofs against the snapshot's
+nullifier non-membership tree, for clients that do not construct those
+proofs themselves (see [Participation Flow]). The role is OPTIONAL: a
+deployment that expects its clients to construct their own proofs need
+not include one. Where a deployment does include one, the retrieval
+protocol it offers is a property of that deployment and is not specified
+here.
 
 ## Vote Chain Infrastructure
 
@@ -464,24 +463,20 @@ private information retrieval. A voter's PIR query reveals
 neither which nullifier is being checked nor the answer to any
 observer of the network.
 
-The service is run by a nullifier service operator (see
-[Nullifier Service Operator]) using the implementation referenced
-in [Reference implementation]. The PIR construction and database
-layout are specified in `draft-valargroup-nullifier-pir`
-[^draft-pir].
+Where a deployment runs one, the service is run by a nullifier service
+operator (see [Nullifier Service Operator]).
 
 The service operates as a three-stage pipeline:
 
 1. **Ingest**: fetch the Zcash mainnet nullifier set up to the
    chosen snapshot height from a Zcash node and persist it to
-   local storage.
-2. **Export**: build the nullifier non-membership tree (an Indexed
-   Merkle Tree as specified in
-   `draft-valargroup-orchard-balance-proof` [^draft-balance-proof])
-   and export the PIR database tiers as specified in
-   `draft-valargroup-nullifier-pir` [^draft-pir]. The exported
-   files allow the server to restart without rebuilding the tree
-   from raw nullifiers.
+   local storage. The ingest pipeline MUST handle chain
+   reorganisations as specified in [Snapshot Derivation].
+2. **Export**: build the nullifier non-membership tree as specified
+   in `draft-valargroup-orchard-balance-proof`
+   [^draft-balance-proof] and export whatever query structures its
+   retrieval protocol requires, so that the server can restart
+   without rebuilding the tree from raw nullifiers.
 3. **Serve**: accept PIR queries from voters and return encrypted
    responses over HTTP. The operator publishes the service URL by
    adding it to the vote configuration document (see
@@ -627,11 +622,22 @@ treat the round as not well formed until the discrepancy is resolved.
 
 The served root is correct only if the tree behind it covers every
 Orchard nullifier revealed at or before $H$ and nothing else. A node
-maintaining that index incrementally MUST handle chain reorganisations
-as specified for the nullifier service's ingest pipeline in
-`draft-valargroup-nullifier-pir` [^draft-pir], and MUST NOT serve a root
-for $H$ until it has confirmed that the block it ingested at $H$ has
-hash $\mathsf{snapshot}\_\mathsf{blockhash}$.
+maintaining that index incrementally MUST:
+
+- track the block hash at which each nullifier entered the index, not
+  only its height;
+- on a chain reorganisation, roll the index back to the last block
+  common to the old and new best chains before applying the new blocks;
+  and
+- refuse to serve a root for $H$ until it has confirmed that the block
+  it ingested at $H$ is on its best chain and has hash
+  $\mathsf{snapshot}\_\mathsf{blockhash}$.
+
+An index built by height alone can omit nullifiers from blocks that
+replaced reorganised ones, or retain nullifiers from blocks no longer on
+the best chain. Either produces a root that is wrong without any party
+intending it, and an incomplete set is the condition under which a spent
+note can be proven unspent.
 
 ### Poll Creation
 
@@ -898,11 +904,16 @@ the wallet-side validation rules are specified in
 For each Orchard note the coinholder uses as voting weight, the
 wallet performs:
 
-1. **Retrieve a non-membership proof.** Query a nullifier service
-   endpoint to retrieve a Merkle non-membership proof for the
-   note's alternate nullifier against the snapshot's
-   `nullifier_imt_root`, as specified in
-   `draft-valargroup-nullifier-pir` [^draft-pir].
+1. **Obtain a non-membership proof.** Prove that the note's standard
+   Orchard nullifier is absent from the set of nullifiers revealed at
+   or before the snapshot height, against the snapshot's
+   `nullifier_imt_root`. A client holding that nullifier set
+   constructs the proof itself, as specified in
+   `draft-valargroup-orchard-balance-proof` [^draft-balance-proof].
+   A client that does not hold the set MAY obtain the proof from a
+   nullifier service (see [Nullifier Service]); doing so reveals to
+   that service which nullifier was asked about, and therefore which
+   note, so a client SHOULD construct its own proof where it can.
 
 2. **Submit a delegation transaction.** Construct a Delegation
    Proof asserting ownership of the eligible note without
@@ -1003,7 +1014,7 @@ reference:
   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 - **Authentication Path** verification and the exclusion-range
   check for the nullifier non-membership tree, in
-  `draft-valargroup-nullifier-pir` [^draft-pir].
+  `draft-valargroup-orchard-balance-proof` [^draft-balance-proof].
 - **Proof Verification** (DLEQ verification of partial
   decryptions) and the **Tally** procedure (Lagrange combination
   and plaintext recovery), in `draft-valargroup-shielded-voting`
@@ -1292,9 +1303,6 @@ told apart from a disagreement about the derivation.
 [^draft-voting-protocol]: [Draft ZIP: Zcash Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
 
 [^draft-voting-protocol-vri]: [Draft ZIP: Zcash Shielded Voting Protocol, Section: Voting Round Identifier](draft-valargroup-shielded-voting.md#voting-round-identifier)
-
-[^draft-pir]: [Draft ZIP: Private Information Retrieval for Nullifier Exclusion Proofs](draft-valargroup-nullifier-pir.md)
-
 
 [^draft-wallet-api]: [Draft ZIP: Shielded Voting Wallet API](draft-valargroup-shielded-voting-wallet-api.md)
 
