@@ -24,17 +24,6 @@ Specification. [^protocol]
 
 The terms below are to be interpreted as follows:
 
-Administrator
-
-: A party whose signature over a round's defining fields wallets
-  recognise. See [Round Attestation].
-
-Attestation
-
-: An administrator's signature over a round's defining fields,
-  establishing to wallets that the round's configuration is the one the
-  administrator independently verified. See [Round Attestation].
-
 Ballot
 
 : A unit of voting weight derived from a zatoshi balance. The
@@ -49,8 +38,8 @@ Decision
 
 Decryption threshold ($t$)
 
-: The number of key-share holders whose partial decryptions are needed
-  to decrypt an aggregate ciphertext. Fixed by
+: The number of trustees whose partial decryptions are needed to
+  decrypt an aggregate ciphertext. Fixed by
   [Election Authority Key Ceremony].
 
 Delegation
@@ -63,18 +52,15 @@ Delegation
 
 Election authority (EA)
 
-: The El Gamal keypair under which a round's vote shares are encrypted,
-  and whose private key decrypts the aggregate tally. A fresh keypair is
-  generated for each round by distributed key generation among the
-  round's key-share holders, so that no party ever holds the private
-  key and decrypting the tally requires a threshold of holders acting
-  together. See [Election Authority Key Ceremony] and
-  [Election Authority Key Custody].
+: The keypair under which a voting round's vote shares are encrypted
+  and whose private key decrypts the aggregate tally. A fresh keypair
+  is generated for each round by the process in
+  [Election Authority Key Ceremony].
 
 Election authority key ceremony
 
 : The distributed key generation protocol, run on the vote chain, that
-  produces a round's election authority public key and each holder's
+  produces a round's election authority public key and each trustee's
   key share. See [Election Authority Key Ceremony].
 
 Encrypted share accumulator
@@ -111,12 +97,6 @@ Ironwood pool
   Orchard keys, notes, signatures or circuits refer to those
   constructions as used in the Ironwood pool.
 
-Key-share holder
-
-: A holder of a share of a round's election authority private key,
-  produced by the key ceremony. Not a validator; see [Ratification] and
-  `draft-valargroup-shielded-voting-setup` [^voting-setup].
-
 Option
 
 : One of the labeled choices a proposal offers. A proposal has between
@@ -124,14 +104,22 @@ Option
 
 Partial decryption
 
-: A key-share holder's contribution to decrypting an aggregate
-  ciphertext, accompanied by a proof that it was computed with the
-  holder's share. See [Partial Decryption].
+: A trustee's contribution to decrypting an aggregate ciphertext,
+  accompanied by a proof that it was computed with the trustee's share.
+  See [Partial Decryption].
 
 Poll runner
 
-: The entity responsible for conducting a voting round; it chooses the
-  snapshot and derives the round's roots. See [Snapshot Configuration].
+: The party that runs a voting round: it chooses the snapshot, reads
+  the round's roots, names its trustees, creates the round on the vote
+  chain, and signs the configuration wallets use to find it. See
+  [Snapshot Configuration], [Poll Creation] and [Poll Signature].
+
+Poll signature
+
+: The poll runner's signature over a round's defining fields, by which
+  wallets recognise the round as the one the poll runner is running.
+  See [Poll Signature].
 
 Proposal
 
@@ -141,9 +129,10 @@ Proposal
 
 Ratification
 
-: A key-share holder's published statement, made by acknowledging its
-  key share, that it holds a verified share for a round and will take
-  part in its tally. See [Ratification].
+: A trustee's published statement, made by acknowledging its key share,
+  that it has verified the round's snapshot roots, holds a verified
+  share for the round, and will take part in its tally. See
+  [Ratification].
 
 Relay
 
@@ -190,11 +179,19 @@ Submission schedule
 : The set of times at which a client's $N_s$ share reveal messages are
   submitted, drawn as specified in [Submission Timing].
 
+Trustee
+
+: One of the parties named in a voting round that jointly generate its
+  election authority key and each hold a share of the private key.
+  Trustees ratify the round and decrypt its tally. A trustee is not a
+  validator or a relay operator of the same round. See
+  [Election Authority Key Ceremony] and [Ratification].
+
 Validator
 
 : An operator of the vote chain's consensus. Validators determine
-  transaction inclusion (see [Transaction Inclusion]) and hold no
-  election authority key shares.
+  transaction inclusion (see [Transaction Inclusion]) and are not
+  trustees.
 
 VAN nullifier
 
@@ -205,8 +202,8 @@ VAN nullifier
 Verification key
 
 : The public value $\mathsf{VK}_i = [\mathsf{sk}_i]\, G$ corresponding
-  to key-share holder $i$'s share, derivable by anyone from the
-  ceremony's published commitments. See
+  to trustee $i$'s share, derivable by anyone from the ceremony's
+  published commitments. See
   [Election Authority Key Ceremony].
 
 Vote Authority Note (VAN)
@@ -234,11 +231,6 @@ Vote Commitment Tree (VCT)
   voting round; trees from different rounds are fully isolated. VANs
   span every proposal in a round, so the tree is per round rather than
   per proposal.
-
-Vote manager
-
-: The on-chain role authorised to create voting rounds. See
-  [Poll Creation].
 
 Vote share
 
@@ -278,10 +270,10 @@ revealing which Vote Commitment the share originated from or which
 option it supports.
 
 After the reveal window closes, anyone can publicly aggregate the
-revealed El Gamal ciphertexts per proposal option. Holders of shares of
-the election authority key — a set disjoint from the validators, among
-whom the key was generated without ever existing whole — cooperate to
-produce partial decryptions; the results are
+revealed El Gamal ciphertexts per proposal option. The round's
+trustees — a set disjoint from the validators, among whom the key was
+generated without ever existing whole — cooperate to produce partial
+decryptions; the results are
 combined via Lagrange interpolation and the aggregate total is publicly
 verified. The tally itself reveals only aggregates. What a party holding
 a threshold of key shares can recover beyond that, and what the parties
@@ -290,10 +282,10 @@ controlling block production can withhold, are stated in
 away.
 
 This ZIP also specifies the voting round as a consensus object: how a
-round is anchored to a Zcash block, how its snapshot roots are derived,
-how administrators attest to it, the key ceremony that produces its
-election authority key, and the ratification by key-share holders that
-gates the opening of voting.
+round is anchored to a Zcash block, how its snapshot roots are read,
+how the poll runner signs it, the key ceremony that produces its
+election authority key, and the ratification by trustees that gates
+the opening of voting.
 
 
 # Motivation
@@ -402,12 +394,12 @@ partitions nothing.
 
 **Trust assumptions.** The election authority private key is never
 held by any party. The key ceremony is a distributed key generation
-among the round's key-share holders (see
-[Election Authority Key Ceremony]); each holder ends the ceremony with
-a share and nobody, at any point, with the key. An adversary must obtain
-at least $t$ shares to decrypt an individual share ciphertext, where $t$
-and the holder set are fixed by the ceremony and published with the
-round. Vote splitting does not substitute for that threshold: it bounds
+among the round's trustees (see
+[Election Authority Key Ceremony]); each trustee ends the ceremony
+with a share and nobody, at any point, with the key. An adversary must
+obtain at least $t$ shares to decrypt an individual share ciphertext,
+where $t$ and the trustee set are fixed by the ceremony and published
+with the round. Vote splitting does not substitute for that threshold: it bounds
 what a coalition that does reach $t$ can learn about any one voter, by
 ensuring that what it can decrypt cannot be grouped.
 
@@ -455,7 +447,7 @@ protocol conceals the query.
 # Non-requirements
 
 - The vote chain's consensus engine, block structure, transaction
-  encoding and API. The rules a round follows — creation, attestation,
+  encoding and API. The rules a round follows — creation, signature,
   lifecycle, key ceremony, ratification and transaction inclusion — are
   in scope; see [Voting Round] and [Vote Chain].
 - How operators are organised to run a deployment: roles, validator
@@ -506,7 +498,7 @@ by handing the finished message to a relay that submits it later. The
 chain accumulates the ciphertext vectors homomorphically.
 
 **Phase 4: Tally.** After the reveal window closes, at least $t$
-key-share holders produce partial decryptions of the aggregate
+trustees produce partial decryptions of the aggregate
 ciphertext per (proposal, option) pair. The partial decryptions are
 stored on-chain and combined via Lagrange interpolation to recover the
 total ballot count (via the bounded discrete-log recovery procedure
@@ -542,7 +534,7 @@ the [Vote Reveal Proof] circuit.
 The keypair is generated afresh for each round by the key ceremony
 specified in `draft-valargroup-shielded-voting-setup` [^voting-setup].
 That document also specifies how $\mathsf{ea}\_\mathsf{sk}$ is shared
-among key-share holders, and is the normative reference for the
+among trustees, and is the normative reference for the
 threshold $t$ used in [Tally].
 
 ### Encryption
@@ -641,7 +633,7 @@ A verifier given $(G, P, H, Q)$ and a proof $(e, z)$ MUST:
 
 ## ECIES on Pallas
 
-Distribution of key shares to their holders uses ECIES [^ecies]
+Distribution of key shares to trustees uses ECIES [^ecies]
 instantiated on Pallas:
 
 - **Key encapsulation**: ephemeral Diffie-Hellman on Pallas with
@@ -1814,10 +1806,9 @@ j)$ aggregate ciphertext, for each option position $j$ below the
 proposal's option count, is decrypted by a threshold procedure. No
 party reconstructs $\mathsf{ea}\_\mathsf{sk}$ at any point.
 
-Let $t$ be the round's decryption threshold, let $\mathsf{QUAL}$ be
-the round's key-share holder set, and let each holder
-$i \in \mathsf{QUAL}$ hold the share $\mathsf{sk}_i$ of
-$\mathsf{ea}\_\mathsf{sk}$, with public verification key
+Let $t$ be the round's decryption threshold, and let each of the
+round's $n$ trustees $i \in \{1 \ldots n\}$ hold the share
+$\mathsf{sk}_i$ of $\mathsf{ea}\_\mathsf{sk}$, with public verification key
 $\mathsf{VK}_i = [\mathsf{sk}_i]\, G$, as produced by
 [Election Authority Key Ceremony]. The shares are Shamir shares
 [^shamir] on a polynomial of degree $t - 1$, so any $t$ of them suffice.
@@ -1838,7 +1829,7 @@ are not part of the tally.
 
 ### Partial Decryption
 
-At least $t$ key-share holders each publish a partial decryption
+At least $t$ trustees each publish a partial decryption
 
 $$D_i = [\mathsf{sk}_i]\, C_{1,\mathsf{agg}}$$
 
@@ -1847,14 +1838,14 @@ specified in [Chaum-Pedersen DLEQ Proofs], instantiated with
 $P = \mathsf{VK}_i$, $H = C_{1,\mathsf{agg}}$, $Q = D_i$ and witness
 $x = \mathsf{sk}_i$. The proof demonstrates
 $\log_G(\mathsf{VK}_i) = \log_{C_{1,\mathsf{agg}}}(D_i)$, establishing
-that the share behind the holder's published verification key is the
+that the share behind the trustee's published verification key is the
 share used to compute $D_i$.
 
 A partial decryption whose proof does not verify MUST be rejected and
 MUST NOT be included in the combination below. Without this check a
-single holder could publish a bogus $D_i$, and the resulting
+single trustee could publish a bogus $D_i$, and the resulting
 combination would yield a point whose discrete logarithm search fails
-or returns an unrelated value, with no indication of which holder was
+or returns an unrelated value, with no indication of which trustee was
 responsible.
 
 ### Combination
@@ -1887,11 +1878,51 @@ coalition holding $t$ shares can do outside this procedure, and
 A voting round is the unit within which delegation, voting, share
 reveal and tally take place. This section specifies what a round is —
 its proposals and its Zcash snapshot — and the consensus rules by which
-the vote chain creates, opens, and closes one: creation, attestation,
-the lifecycle states, the election authority key ceremony that produces
-the round's key, and the ratification that gates the transition to
-voting. Who performs each step, and how operators are organised to do
-so, is specified in `draft-valargroup-shielded-voting-setup` [^voting-setup].
+the vote chain creates, opens, and closes one: the lifecycle states,
+creation, the poll runner's signature, the election authority key
+ceremony that produces the round's key, and the ratification that
+gates the transition to voting. Who performs each step, and how
+operators are organised to do so, is specified in
+`draft-valargroup-shielded-voting-setup` [^voting-setup].
+
+### Round Lifecycle
+
+1. **PENDING**: voting round created, awaiting the election authority
+   key ceremony and its ratification by every trustee (see
+   [Ratification]). A round whose ceremony fails is finalized without
+   opening (see [Election Authority Key Ceremony]).
+2. **ACTIVE**: ceremony complete and round ratified; the voting window
+   is open. The chain accepts delegation and vote transactions for the
+   round and rejects share reveal transactions.
+3. **REVEALING**: `vote_end_time` has passed; the reveal window is
+   open. On entering this state the chain MUST record the VCT root as
+   the round's **final VCT root**, and MUST thereafter reject delegation
+   and vote transactions for the round, so that the VCT does not change.
+   The chain accepts share reveal transactions anchored to the final
+   root (see [Vote Reveal Proof]). Voters construct and submit their
+   share reveal messages (see [Share Submission] and
+   [Submission Timing]).
+4. **TALLYING**: `reveal_end_time` has passed. Trustees submit
+   partial decryptions, the chain combines them, and tally
+   decryption runs automatically (see [Tally]). The
+   chain enforces a bounded timeout on the TALLYING state: if a
+   tally is not submitted within this timeout, the round
+   auto-finalizes with no tally, preserving liveness.
+5. **FINALIZED**: tally published and verifiable. A round that
+   auto-finalized due to a TALLYING timeout, or whose ceremony failed,
+   publishes no tally.
+
+`reveal_end_time` MUST be later than `vote_end_time` by at least
+$2\Delta$ (see [Deployment]). A deployment MUST publish the reveal
+window length it uses, and SHOULD choose one long enough that a voter
+who opens their wallet at ordinary intervals does so at least once
+within it; see [Why a Separate Reveal Window].
+
+Any number of voting rounds MAY exist in any state at once. All round
+state — the VCT, the nullifier sets, the accumulators, the ceremony and
+the lifecycle — is kept per round, and nothing in this specification
+requires the vote chain to know which rounds are in progress beyond
+maintaining that state.
 
 ### Proposals and Decisions
 
@@ -1986,8 +2017,8 @@ coordinated activities:
    `draft-valargroup-orchard-balance-proof` [^balance-proof], on
    the chain whose block at height $H$ has hash
    $\mathsf{snapshot}\_\mathsf{blockhash}$. No party has discretion over
-   their values. The poll runner derives them by the procedure in
-   [Snapshot Derivation].
+   their values. The poll runner reads them from a Zcash consensus node
+   as specified in [Reading the Snapshot Roots].
 
 2. **Ensure the nullifier service has the snapshot's PIR
    database.** The poll runner coordinates with each nullifier
@@ -1998,102 +2029,80 @@ coordinated activities:
    have run to the chosen height before the round opens, so
    wallets can query exclusion proofs against that snapshot.
 
-3. **Use the values during chain bootstrap.**
+3. **Use the values in the round creation transaction.**
    $\mathsf{nc}\_\mathsf{root}$ and
-   $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ are passed
-   into the genesis state (see the "Genesis Validator Setup" section of
-`draft-valargroup-shielded-voting-setup` [^voting-setup]) and
-   into the voting round initialization transaction (see
-   [Poll Creation]) so that on-chain verifiers and wallet
-   clients use them as ZKP public inputs.
+   $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ are carried in
+   the round creation transaction (see [Poll Creation]) so that
+   on-chain verifiers and wallet clients use them as ZKP public inputs.
 
-### Snapshot Derivation
+### Reading the Snapshot Roots
 
-This procedure defines what it means for a round's snapshot roots to be
-correct, and how a party obtains them. Both roots are properties of
-Zcash mainnet state at $(H, \mathsf{snapshot}\_\mathsf{blockhash})$, and
-both are read from a Zcash consensus node that has validated the chain
+Both snapshot roots are properties of Zcash mainnet state at
+$(H, \mathsf{snapshot}\_\mathsf{blockhash})$. A party obtains them by
+reading them from a Zcash consensus node that has validated the chain
 to at least that height. No party reconstructs either tree from the
 Zcash chain or from its leaves.
 
-1. Confirm that the block at height $H$ on the node's best chain has
-   hash $\mathsf{snapshot}\_\mathsf{blockhash}$. If it does not, the
-   round is not well formed.
+1. Confirm that the block at height $H$ on the Zcash consensus node's
+   best chain has hash $\mathsf{snapshot}\_\mathsf{blockhash}$. If it
+   does not, the round is not well formed.
 2. Obtain $\mathsf{nc}\_\mathsf{root}$: the Ironwood pool note
    commitment tree root as of the end of block $H$. This is Zcash
-   consensus data. A node computes it while validating the chain and
-   exposes it as the pool's anchor at that height.
+   consensus data; a Zcash consensus node computes it while validating
+   the chain and exposes it as the pool's anchor at that height.
 3. Obtain $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$: the root
    of the nullifier non-membership tree over every Ironwood pool
    nullifier revealed at or before $H$, constructed as specified in
    `draft-valargroup-orchard-balance-proof` [^balance-proof].
-   Zcash consensus does not commit to this tree; a node maintains it as
-   an index over the nullifier set it already tracks, and serves its
-   root.
+   Zcash blocks do not commit to this tree; a Zcash consensus node
+   maintains it as an index over the nullifier set it already tracks,
+   and serves its root.
 4. Compare both values with the round's $\mathsf{nc}\_\mathsf{root}$
    and $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$.
 
 A round is **well formed** if all four steps succeed.
 
-**Who performs it.** The poll runner MUST perform it before publishing a
-round's roots. Each administrator MUST perform it against a node under
-its own control before attesting to a round (see [Round Attestation]).
-Any party MAY perform it. Wallets are not required to: a wallet
-authenticates the round configuration and binds it to the chain round as
-specified in `draft-valargroup-shielded-voting-wallet-api`
-[^wallet-api], and derives no roots of its own.
+Any Zcash consensus node that follows the Zcash protocol and serves
+both roots is acceptable; parties need not agree on an implementation.
+The construction in `draft-valargroup-orchard-balance-proof`
+[^balance-proof] is the sole authority on the value of
+$\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$, and a Zcash consensus
+node that serves it MUST implement that construction.
 
-**Node requirements.** A deployment MUST identify the Zcash node
-implementations and versions it relies on to serve
-$\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ (see [Deployment]).
-Because that root is not consensus data, two node implementations can
-disagree about it with no Zcash consensus rule to settle the
-disagreement. The construction specified in
-`draft-valargroup-orchard-balance-proof` [^balance-proof] is the
-sole authority: a party that obtains differing roots for the same
-$(H, \mathsf{snapshot}\_\mathsf{blockhash})$ from independent nodes MUST
-treat the round as not well formed until the discrepancy is resolved.
-
-The served root is correct only if the tree behind it covers every
-Ironwood pool nullifier revealed at or before $H$ and nothing else. A node
-maintaining that index incrementally MUST:
-
-- track the block hash at which each nullifier entered the index, not
-  only its height;
-- on a chain reorganisation, roll the index back to the last block
-  common to the old and new best chains before applying the new blocks;
-  and
-- refuse to serve a root for $H$ until it has confirmed that the block
-  it ingested at $H$ is on its best chain and has hash
-  $\mathsf{snapshot}\_\mathsf{blockhash}$.
-
-An index built by height alone can omit nullifiers from blocks that
-replaced reorganised ones, or retain nullifiers from blocks no longer on
-the best chain. Either produces a root that is wrong without any party
-intending it, and an incomplete set is the condition under which a spent
-note can be proven unspent.
+**Who performs it.** The poll runner MUST perform it before creating a
+round. Each trustee MUST perform it, against a Zcash consensus node
+under its own control, before ratifying a round (see [Ratification]).
+Each wallet MUST perform it, against the Zcash consensus node it
+trusts for Zcash state, before taking part in a round, as specified in
+`draft-valargroup-shielded-voting-wallet-api` [^wallet-api]. Agreement
+with another party's copy of the round does not satisfy this for any
+of them: comparing two copies of the same values establishes only that
+two parties received the same input, not that the input is correct.
 
 ### Poll Creation
 
-The vote manager initializes the chain's voting round by submitting
-a transaction carrying the client-supplied subset of the `VoteRound`
+Any account MAY create a voting round by submitting a round creation
+transaction carrying the client-supplied subset of the `VoteRound`
 structure specified in `draft-valargroup-shielded-voting-wallet-api`
-[^wallet-api]. The vote manager supplies `snapshot_height`,
+[^wallet-api]. The transaction supplies `snapshot_height`,
 `snapshot_blockhash`, `proposals_hash`, `vote_end_time`,
 `reveal_end_time`, `nullifier_imt_root`, `nc_root`, `proposals`,
-`key_share_holders`, `min_confirmations`, `title`, and `description`;
-the transaction's signer becomes the `creator` field
-of the resulting `VoteRound`. The chain derives the remaining
-fields (`vote_round_id`, `status`, `ea_pk`, `created_at_height`)
-at inclusion or during the round lifecycle.
+`trustees`, `min_confirmations`, `title`, and `description`; the
+transaction's signer is recorded as the `creator` field of the
+resulting `VoteRound`. The chain derives the remaining fields
+(`vote_round_id`, `status`, `ea_pk`, `created_at_height`) at inclusion
+or during the round lifecycle. Creating a round requires no privileged
+role: the vote chain records any well-formed round, and a round that
+no trustee ratifies never opens.
 
-The chain rejects the transaction if the signer is not the current
-vote manager, if the `proposals` field violates the constraints
-in [Proposals and Decisions], if `reveal_end_time` is not later
-than `vote_end_time` by at least $2\Delta$ (see [Round Lifecycle]), or
-if `key_share_holders` names fewer than two holders or any holder
-without a registered Pallas public key (see
-[Election Authority Key Ceremony]).
+The chain rejects the transaction if the `proposals` field violates the
+constraints in [Proposals and Decisions], if `reveal_end_time` is not
+later than `vote_end_time` by at least $2\Delta$ (see
+[Round Lifecycle]), or if `trustees` names fewer than two trustees or
+any trustee without a registered ceremony key (see
+[Election Authority Key Ceremony]). The chain does not, and cannot,
+verify the snapshot roots; see [Reading the Snapshot Roots] for who
+does.
 
 The vote chain derives the 32-byte `vote_round_id` from the
 transaction fields after inclusion, using the Poseidon construction
@@ -2102,32 +2111,30 @@ so that the round ID can enter ZKP circuits as a public input.
 
 The round enters the **PENDING** state. The EA key ceremony (see
 [Election Authority Key Ceremony]) runs automatically. Once it
-completes and at least $t$ key-share holders have ratified the round
-(see [Ratification]), the round transitions to **ACTIVE**, the voting
+completes and every trustee has ratified the round (see
+[Ratification]), the round transitions to **ACTIVE**, the voting
 window opens, and the transition timestamp is recorded as
 `ceremony_phase_start`. The round transitions to **REVEALING** at
 `vote_end_time` and to **TALLYING** at `reveal_end_time` (see
 [Round Lifecycle]). Clients construct their share submission schedule
 within the reveal window, as specified in [Submission Timing]. There
-is no last-moment buffer: the single-share mode that earlier drafts
-defined for the end of the voting window has been removed, and a client
-near the deadline compresses its schedule rather than concentrating its
-weight.
+is no last-moment buffer: a client near the deadline compresses its
+schedule rather than concentrating its weight.
 
-### Round Attestation
+### Poll Signature
 
-Administrators attest to a round by signing its defining fields. A
-wallet accepts a round only with at least $m$ valid attestations from
-administrators it recognises, as specified in
-`draft-valargroup-shielded-voting-wallet-api` [^wallet-api], and
-the administrator signature threshold $m$ MUST be at least 2.
+The poll runner publishes a round to wallets as a vote configuration,
+as specified in `draft-valargroup-shielded-voting-wallet-api`
+[^wallet-api], and signs it. A wallet accepts a configuration only if
+it carries a valid signature from a poll runner key the wallet
+recognises.
 
-The bytes covered by an attestation are the concatenation, in this
+The bytes covered by the signature are the concatenation, in this
 order, of:
 
 | Component | Width |
 |---|---|
-| The ASCII string `ZcashVotingRoundAttestation:v3` | 30 bytes |
+| The ASCII string `ZcashVotingPollSignature:v3` | 27 bytes |
 | `vote_round_id` | 32 bytes |
 | `snapshot_height`, big-endian unsigned | 4 bytes |
 | `snapshot_blockhash` | 32 bytes |
@@ -2136,87 +2143,85 @@ order, of:
 | `proposals_hash` | 32 bytes |
 | `vote_end_time`, big-endian unsigned | 8 bytes |
 | `reveal_end_time`, big-endian unsigned | 8 bytes |
-| `ea_pk` | 32 bytes |
-| `min_confirmations`, big-endian unsigned | 4 bytes |
+| `trustees_hash` | 32 bytes |
 
-All components are fixed width, so the encoding is unambiguous without
-length prefixes. The domain separator distinguishes these bytes from any
-other signature the same key may produce, and its version is that of
-the vote configuration format that carries the attestation.
+where `trustees_hash` is the BLAKE2b-256 [^blake2] hash, with
+personalization `ZcashVotingTrustees`, of the concatenation of the
+trustees' account public keys in the order the configuration lists
+them, each encoded as specified in
+`draft-valargroup-shielded-voting-wallet-api` [^wallet-api]. All
+components are fixed width, so the encoding is unambiguous without
+length prefixes. The domain separator distinguishes these bytes from
+any other signature the same key may produce, and its version is that
+of the vote configuration format that carries the signature.
 
-An administrator MUST NOT sign a round unless it has performed
-[Snapshot Derivation] for that round, using a Zcash full node under
-its own control, and obtained the round's $\mathsf{nc}\_\mathsf{root}$
-and $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$. Agreement with
-another party's copy of the configuration does not satisfy this:
-comparing two copies of the same values establishes only that two
-parties received the same input, not that the input is correct. See
-[Why Snapshot Roots Are Independently Derived].
+The signature establishes that the round — its snapshot, its proposals,
+its deadlines and its trustees — is the one the poll runner is running.
+It does not establish that the snapshot roots are correct or that the
+election authority key is genuine, and a wallet MUST NOT treat it as
+doing so. A wallet verifies those two things itself:
 
-### Round Lifecycle
+- **Snapshot roots.** The wallet MUST perform
+  [Reading the Snapshot Roots] against the Zcash consensus node it
+  trusts, and MUST NOT take part in a round whose roots differ from
+  what that node serves. The same node is the wallet's oracle for every
+  other fact about Zcash state, so this adds no trust the wallet did not
+  already extend.
+- **Election authority key.** $\mathsf{ea}\_\mathsf{pk}$ exists only
+  once the ceremony completes and is not covered by the signature. The
+  wallet reads it from the chain round and MUST verify that every
+  trustee listed in the configuration has published an acknowledgement
+  committing to that $\mathsf{ea}\_\mathsf{pk}$ and this
+  $\mathsf{vote}\_\mathsf{round}\_\mathsf{id}$ (see
+  [Election Authority Key Ceremony]), each signed by that trustee's
+  account key. A key acknowledged by every trustee is the key those
+  trustees hold shares of; a key that is not is one the wallet MUST NOT
+  encrypt to.
 
-1. **PENDING**: round created, awaiting the EA key ceremony and its
-   ratification by key-share holders (see [Ratification]).
-2. **ACTIVE**: ceremony complete and round ratified; the voting window
-   is open. The chain accepts delegation and vote transactions for the
-   round and rejects share reveal transactions.
-3. **REVEALING**: `vote_end_time` has passed; the reveal window is
-   open. On entering this state the chain MUST record the VCT root as
-   the round's **final VCT root**, and MUST thereafter reject delegation
-   and vote transactions for the round, so that the VCT does not change.
-   The chain accepts share reveal transactions anchored to the final
-   root (see [Vote Reveal Proof]). Voters construct and submit their
-   share reveal messages (see [Share Submission] and
-   [Submission Timing]).
-4. **TALLYING**: `reveal_end_time` has passed. Key-share holders submit
-   partial decryptions, the chain combines them, and tally
-   decryption runs automatically (see [Tally]). The
-   chain enforces a bounded timeout on the TALLYING state: if a
-   tally is not submitted within this timeout, the round
-   auto-finalizes with no tally, preserving liveness.
-5. **FINALIZED**: tally published and verifiable. A round that
-   auto-finalized due to a TALLYING timeout publishes no tally.
-
-`reveal_end_time` MUST be later than `vote_end_time` by at least
-$2\Delta$ (see [Deployment]). A deployment MUST publish the reveal
-window length it uses, and SHOULD choose one long enough that a voter
-who opens their wallet at ordinary intervals does so at least once
-within it; see [Why a Separate Reveal Window].
+Because the signature does not cover $\mathsf{ea}\_\mathsf{pk}$, the
+poll runner can publish and sign a configuration as soon as the round
+is created, and wallets can authenticate it before the round opens.
 
 ### Election Authority Key Ceremony
 
-Each round uses a fresh election authority keypair
+Each voting round uses a fresh election authority keypair
 $(\mathsf{ea}\_\mathsf{sk}, \mathsf{ea}\_\mathsf{pk})$. The ceremony
 that produces it is a distributed key generation (DKG) among the
-round's key-share holders, run over the vote chain, which serves as
-the ceremony's authenticated broadcast channel. It runs automatically
+round's trustees, run over the vote chain, which serves as the
+ceremony's authenticated broadcast channel. It runs automatically
 when the round enters PENDING. The construction is Pedersen's DKG
 [^pedersen-dkg] with Feldman verifiable secret sharing [^feldman] and
 a proof of knowledge of each contribution, in the form analysed in
 [^gjkr] and adopted by FROST [^frost].
 
-No party holds $\mathsf{ea}\_\mathsf{sk}$ at any point. Each holder
+No party holds $\mathsf{ea}\_\mathsf{sk}$ at any point. Each trustee
 contributes a random polynomial; the key is the sum of the constant
-terms, and each holder's share is the sum of the other holders'
-evaluations at its index. Scoping the key to one round bounds the
-damage from a share compromise to that round, and means a holder that
-leaves the set cannot decrypt later rounds. The cryptographic
+terms, and each trustee's share is the sum of every trustee's
+evaluation at its index. Scoping the key to one voting round bounds
+the damage from a share compromise to that round, and means a trustee
+that leaves the set cannot decrypt later rounds. The cryptographic
 constructions used below are specified in
 [El Gamal Encryption on Pallas], [ECIES on Pallas] and
 [Chaum-Pedersen DLEQ Proofs].
 
-**Participants.** The round's key-share holders are the parties
-registered as such for the round, each with a registered Pallas public
-key for receiving encrypted shares. Let $n$ be their number and index
-them $1, \ldots, n$. The round's decryption threshold is
-$t = \lceil n/2 \rceil + 1$, with a minimum of 2. The holder set is
-named in the round creation transaction (see [Poll Creation]); how
-holders are admitted and how they register keys is specified in the
-"Onboarding Key-Share Holders" section of
-`draft-valargroup-shielded-voting-setup` [^voting-setup]. A key-share
-holder MUST NOT be a validator or a relay operator of the same round.
+**Participants.** The round's trustees are the parties named in its
+creation transaction (see [Poll Creation]), each of which has
+registered a **ceremony key** — a Pallas public key for receiving
+encrypted shares — and an account whose address the chain recognises
+for the trustee's ceremony, acknowledgement and partial decryption
+transactions. Let $n$ be their number and index them $1, \ldots, n$.
+The round's decryption threshold is $t = \lceil n/2 \rceil + 1$, with
+a minimum of 2. How trustees are admitted and how they register keys
+is specified in `draft-valargroup-shielded-voting-setup`
+[^voting-setup]. A trustee MUST NOT be a validator or a relay operator
+of the same round.
 
-**Round 1: commitment.** Each holder $i$:
+The ceremony proceeds in three stages. Every trustee MUST complete
+every stage; a ceremony in which any trustee does not is a failed
+ceremony (see below). The stage names below are unrelated to voting
+rounds.
+
+**Stage 1: commitment.** Each trustee $i$:
 
 1. Samples $t$ coefficients $a_{i,0}, \ldots, a_{i,t-1}$ uniformly at
    random from the Pallas scalar field, defining
@@ -2230,136 +2235,127 @@ holder MUST NOT be a validator or a relay operator of the same round.
 4. Publishes to the chain, in a ceremony transaction: $A_{i,0}, \ldots,
    A_{i,t-1}$ and $(R_i, \mu_i)$.
 
-The chain MUST reject a Round 1 transaction whose proof of knowledge
+The chain MUST reject a Stage 1 transaction whose proof of knowledge
 does not verify, that is, unless
 $[\mu_i]\, G = R_i + [c_i]\, A_{i,0}$. The proof of knowledge prevents
-a holder from choosing its commitment as a function of others' and so
+a trustee from choosing its commitment as a function of others' and so
 biasing or cancelling the key; see [Why Distributed Key Generation].
 
-Round 1 closes when every holder has published or the commitment
-timeout has elapsed. Let $\mathcal{C}$ be the set of holders that
-published a valid Round 1 transaction. If $|\mathcal{C}| < t$, the
-ceremony fails and restarts.
+Stage 1 closes when every trustee has published, or fails when the
+commitment timeout elapses first.
 
-**Round 2: dealing.** Each holder $i \in \mathcal{C}$ computes
-$f_i(j)$ for every $j \in \mathcal{C}$, $j \neq i$, encrypts each to
-holder $j$'s registered Pallas key using ECIES with a fresh ephemeral
-scalar per recipient, and publishes the encrypted shares to the chain
-in a ceremony transaction. A holder MUST then erase
-$a_{i,1}, \ldots, a_{i,t-1}$ and every $f_i(j)$ for $j \neq i$,
-retaining only $f_i(i)$. Round 2 closes when every holder in
-$\mathcal{C}$ has published or the dealing timeout has elapsed.
+**Stage 2: dealing.** Each trustee $i$ computes $f_i(j)$ for every
+other trustee $j$, encrypts each to trustee $j$'s ceremony key using
+ECIES with a fresh ephemeral scalar per recipient, and publishes the
+encrypted shares to the chain in a ceremony transaction. A trustee
+MUST then erase $a_{i,1}, \ldots, a_{i,t-1}$ and every $f_i(j)$ for
+$j \neq i$, retaining only $f_i(i)$. Stage 2 closes when every trustee
+has published, or fails when the dealing timeout elapses first.
 
-**Round 3: verification and complaints.** Each holder $j$ decrypts
-each share $f_i(j)$ addressed to it and checks it against holder
+**Stage 3: verification and complaints.** Each trustee $j$ decrypts
+each share $f_i(j)$ addressed to it and checks it against trustee
 $i$'s commitments:
 
 $$[f_i(j)]\, G = \sum_{k=0}^{t-1} [j^k]\, A_{i,k}$$
 
-If the check fails for some $i$, or holder $i$ published no share for
-$j$, holder $j$ publishes a complaint against $i$ within the complaint
-window. A holder $i$ that receives a complaint from $j$ MUST respond,
-within the same window, by publishing $f_i(j)$ in the clear. The chain
-MUST verify the published value against $A_{i,\cdot}$ by the equation
-above. Holder $i$ is **disqualified** if it fails to publish a Round 2
-transaction, fails to respond to a complaint, or responds with a value
-that fails verification. A holder whose response verifies is not
-disqualified, and the complaining holder uses the published value as
-its share from $i$.
+If the check fails for some $i$, trustee $j$ publishes a complaint
+against $i$ within the complaint window. A trustee $i$ that receives a
+complaint from $j$ MUST respond, within the same window, by publishing
+$f_i(j)$ in the clear. The chain MUST verify the published value
+against $A_{i,\cdot}$ by the equation above. If trustee $i$ fails to
+respond, or responds with a value that fails verification, the
+ceremony fails. If the response verifies, the complaining trustee uses
+the published value as its share from $i$, and the ceremony continues.
+Stage 3 closes when the complaint window elapses with every complaint
+answered.
 
-Let $\mathsf{QUAL} \subseteq \mathcal{C}$ be the holders not
-disqualified. If $|\mathsf{QUAL}| < t$, the ceremony fails and
-restarts. $\mathsf{QUAL}$ is the round's key-share holder set; a
-holder outside it holds no share of the round's key and MUST NOT take
-part in the tally.
-
-**Key derivation.** On the close of Round 3 the chain computes and
+**Key derivation.** On the close of Stage 3 the chain computes and
 records:
 
-$$\mathsf{ea}\_\mathsf{pk} = \sum_{i \in \mathsf{QUAL}} A_{i,0}$$
+$$\mathsf{ea}\_\mathsf{pk} = \sum_{i=1}^{n} A_{i,0}$$
 
-$$\mathsf{VK}_j = \sum_{i \in \mathsf{QUAL}} \sum_{k=0}^{t-1} [j^k]\, A_{i,k} \quad \text{for each } j \in \mathsf{QUAL}$$
+$$\mathsf{VK}_j = \sum_{i=1}^{n} \sum_{k=0}^{t-1} [j^k]\, A_{i,k} \quad \text{for each } j \in \{1 \ldots n\}$$
 
-Each holder $j \in \mathsf{QUAL}$ computes its share
+Each trustee $j$ computes its share
 
-$$\mathsf{sk}_j = \sum_{i \in \mathsf{QUAL}} f_i(j)$$
+$$\mathsf{sk}_j = \sum_{i=1}^{n} f_i(j)$$
 
 and MUST verify that $[\mathsf{sk}_j]\, G = \mathsf{VK}_j$ before
 acknowledging. The shares $\mathsf{sk}_j$ are Shamir shares [^shamir]
-of $\mathsf{ea}\_\mathsf{sk} = \sum_{i \in \mathsf{QUAL}} a_{i,0}$ on
-the degree-$(t-1)$ polynomial $\sum_{i \in \mathsf{QUAL}} f_i$, so
-[Tally] applies to them unchanged. Every $\mathsf{VK}_j$ is computed
-from published values and can be recomputed by any party.
+of $\mathsf{ea}\_\mathsf{sk} = \sum_i a_{i,0}$ on the degree-$(t-1)$
+polynomial $\sum_i f_i$, so [Tally] applies to them unchanged. Every
+$\mathsf{VK}_j$ is computed from published values and can be recomputed
+by any party.
 
-**Acknowledgement.** Each holder $j \in \mathsf{QUAL}$ that has
-verified its share submits an acknowledgement transaction carrying
+**Acknowledgement.** Each trustee $j$ that has verified its share, and
+has verified the round's snapshot roots as [Ratification] requires,
+submits an acknowledgement transaction, signed by its account key,
+carrying
 
-$$\mathsf{SHA256}\bigl(\texttt{"ack"} \mathbin\| \mathsf{vote}\_\mathsf{round}\_\mathsf{id} \mathbin\| \mathsf{ea}\_\mathsf{pk} \mathbin\| \mathsf{holder}\_\mathsf{address}\bigr)$$
+$$\mathsf{SHA256}\bigl(\texttt{"ack"} \mathbin\| \mathsf{vote}\_\mathsf{round}\_\mathsf{id} \mathbin\| \mathsf{ea}\_\mathsf{pk} \mathbin\| \mathsf{trustee}\_\mathsf{address}\bigr)$$
 
-A holder MUST NOT acknowledge a share that fails the verification key
+A trustee MUST NOT acknowledge a share that fails the verification key
 check. Committing to $\mathsf{ea}\_\mathsf{pk}$ keeps an
 acknowledgement from carrying over to a round rekeyed after the fact;
 committing to `vote_round_id` keeps it from carrying over to another
-round under the same key. This acknowledgement is also the holder's
-ratification of the round; see [Ratification].
+round under the same key. This acknowledgement is the trustee's
+ratification of the round; see [Ratification]. Wallets verify these
+acknowledgements to authenticate $\mathsf{ea}\_\mathsf{pk}$; see
+[Poll Signature].
 
-**Confirmation.** The ceremony confirms when every holder in
-$\mathsf{QUAL}$ has acknowledged, or, after the acknowledgement
-timeout, when at least $t$ have. Holders in $\mathsf{QUAL}$ that did
-not acknowledge retain a valid share and MAY still take part in the
-tally, but have not ratified the round. If fewer than $t$ acknowledge
-within the timeout, the ceremony fails and restarts.
+**Confirmation.** The ceremony confirms when every trustee has
+acknowledged. If the acknowledgement timeout elapses first, the
+ceremony fails.
 
-Requiring $t$ acknowledgements before confirmation is deliberate: the
-number of acknowledgements required to confirm is the same $t$ used for
-threshold decryption. Were confirmation to require fewer, a round could
-open that could never be tallied.
+**Failure.** A failed ceremony restarts from Stage 1 with fresh
+randomness, with the same trustees. A deployment MUST publish the
+maximum number of attempts; when it is exhausted, the round is
+finalized without opening (see [Round Lifecycle]), and the poll runner
+MAY create a new round with an amended trustee set. Each trustee's
+participation in each attempt is a matter of chain record.
 
-**Failure and restart.** A ceremony that fails restarts from Round 1
-with fresh randomness. Holders that caused a failure by not
-participating are excluded from the restarted ceremony. A deployment
-SHOULD publish each holder's participation record; how persistent
-non-participation is treated is an operational matter specified in
-`draft-valargroup-shielded-voting-setup` [^voting-setup].
-
-**Holder set changes.** A party joining the holder set during a round
-receives no share for that round and waits for the next. A holder
-leaving retains its share and cannot be compelled to delete it;
+**Trustee set changes.** A round's trustee set is fixed at creation. A
+trustee cannot be added to a round in progress, and a trustee that
+leaves retains its share and cannot be compelled to delete it;
 per-round keys bound what that share is worth, since it opens nothing
 in any other round.
 
 **Timing parameters.** The commitment, dealing, complaint and
-acknowledgement timeouts are chain parameters fixed in the vote chain's
-genesis state. A deployment MUST publish the values it applies.
+acknowledgement timeouts, and the maximum number of ceremony attempts,
+are chain parameters fixed in the vote chain's genesis state. A
+deployment MUST publish the values it applies.
 
 ### Ratification
 
-Attestation ([Round Attestation]) establishes that a round's parameters
-are correct. It does not establish that the round will be tallied. Those
-are different parties: administrators configure a round, and key-share
-holders decrypt its result. A round can be correctly configured, voted
-in, and never opened.
+The poll signature ([Poll Signature]) establishes that a round is the
+one its poll runner is running. It does not establish that the round
+will be tallied. Those are different parties: the poll runner
+configures a round, and the trustees decrypt its result. A round can be
+correctly configured, voted in, and never opened.
 
-A key-share holder ratifies a round with the acknowledgement it submits
-during the key ceremony, as specified in
-[Election Authority Key Ceremony]. Submitting it is the holder's
-statement that it holds a verified share for the round and will take
-part in its tally.
+A trustee ratifies a round with the acknowledgement it submits at the
+end of the key ceremony, as specified in
+[Election Authority Key Ceremony]. Submitting it is the trustee's
+statement that it has read the round's snapshot roots from a Zcash
+consensus node under its own control and found them correct (see
+[Reading the Snapshot Roots]), that it holds a verified share for the
+round, and that it will take part in the round's tally. A trustee MUST
+NOT ratify a round whose snapshot roots it has not verified.
 
-A round MUST NOT enter ACTIVE until at least $t$ distinct key-share
-holders have ratified it, where $t$ is the round's decryption threshold.
-Below $t$ the question does not arise: a round ratified by fewer than $t$
-holders cannot be tallied even if every ratifying holder honours its
-statement, so requiring $t$ makes the ratifications a statement that the
-round is tallyable, not merely that some holders are willing. Because
-ratifications are vote chain transactions, they are published with the
-round.
+A round MUST NOT enter ACTIVE until every trustee named in it has
+ratified it. Ratification is unanimous rather than a threshold: a round
+ratified by only $t$ of its $n$ trustees would be lost if any one of
+them became unavailable during the round, whereas a round ratified by
+all $n$ can lose up to $n - t$ of them and still be tallied. Trustees
+that cannot agree unanimously to serve a round should not be that
+round's trustees. Because ratifications are vote chain transactions,
+they are published with the round.
 
 A ratification is a statement of intent, not an enforceable commitment.
-A holder can ratify and then decline to take part, and nothing in this
+A trustee can ratify and then decline to take part, and nothing in this
 document prevents that. What ratification provides is that the decision
-is made and published before voters commit their balances, rather than
-discovered afterwards, and that a holder declining to tally a round it
+is made and published before voters commit to the round, rather than
+discovered afterwards, and that a trustee declining to tally a round it
 ratified is visibly departing from a published statement. See
 [Why Ratification Precedes Voting].
 
@@ -2367,16 +2363,16 @@ ratified is visibly departing from a published statement. See
 
 **Share generation.** The ceremony in [Election Authority Key Ceremony]
 generates the key in distributed form: no party ever holds
-$\mathsf{ea}\_\mathsf{sk}$, and every holder can verify its own share
+$\mathsf{ea}\_\mathsf{sk}$, and every trustee can verify its own share
 against published commitments without trusting any other participant.
 The claim that no single party holds the key therefore rests on the
 ceremony's construction rather than on any party's promise to erase
-anything. What each holder MUST erase is its own polynomial's
+anything. What each trustee MUST erase is its own polynomial's
 non-constant coefficients and the shares it dealt to others, as
-specified in Round 2; retaining them does not expose the key, but does
-expose other holders' shares from that dealer.
+specified in Stage 2; retaining them does not expose the key, but does
+expose other trustees' shares from that trustee.
 
-**Retention.** Each key-share holder MUST destroy its share once the
+**Retention.** Each trustee MUST destroy its share once the
 round is finalized and its tally published, and a deployment MUST
 publish the retention period it applies. The encrypted shares of every
 individual vote remain on the vote chain permanently, and their
@@ -2430,7 +2426,7 @@ its decision (see [Vote Reveal Proof]), and per-option totals are not
 public while a round is open, so validators acting alone cannot select
 reveals to exclude by the option they support. They can exclude reveals
 by proposal, by time of arrival, by network origin, or wholesale. A
-coalition of validators and $t$ key-share holders could decrypt reveals
+coalition of validators and $t$ trustees could decrypt reveals
 as they arrive and exclude by option; the requirement that the two sets
 be disjoint (see [Election Authority Key Ceremony]) exists to keep that
 coalition from being a single organisation.
@@ -2453,7 +2449,8 @@ specified; see [Open issues].
 **Detection.** Exclusion is detectable but not provable from chain
 state alone. An excluded transaction leaves no record on the chain that
 excluded it. Available signals are: a count of votes cast against the
-count of shares revealed; the contents of honest nodes' mempools,
+count of shares revealed; the contents of honest vote chain nodes'
+mempools,
 compared with what was subsequently included; and voters observing
 that their own shares never appeared. The last is currently unavailable
 in practice, because a voter querying the chain for their own share
@@ -2526,7 +2523,7 @@ following. They are ordered so that each step presupposes the ones
 above it.
 
 1. **Round configuration.** The round's snapshot roots are correct, as
-   established by the procedure in [Snapshot Derivation]. This is
+   established by the procedure in [Reading the Snapshot Roots]. This is
    not verifiable from vote chain state, because the roots are supplied
    as input at round creation rather than derived by consensus. A
    verifier that omits this step establishes only that votes are well
@@ -2945,7 +2942,7 @@ indistinguishable runs one proposal per round.
 
 The consequence is that this protocol provides ballot secrecy against
 relays, validators and chain observers, and against any party holding
-fewer than $t$ key shares. A coalition of $t$ holders that decrypts an
+fewer than $t$ key shares. A coalition of $t$ trustees that decrypts an
 individual share learns that share's option along with its value,
 within the limits stated in [Privacy Implications].
 
@@ -3036,7 +3033,7 @@ on active rows.
 ## Why Distributed Key Generation
 
 The election authority key is generated in shares from the start, so
-that compromise of any set of holders smaller than $t$ does not expose
+that compromise of any set of trustees smaller than $t$ does not expose
 $\mathsf{ea}\_\mathsf{sk}$ and therefore cannot open an individual
 share ciphertext, and so that no party ever holds the key at all.
 
@@ -3149,32 +3146,6 @@ to produce the same hash as a valid VC preimage, regardless of the
 remaining inputs.
 
 
-## Why Snapshot Roots Are Independently Derived
-
-Requiring more administrators to sign a round does not, on its own, make
-its snapshot roots any more likely to be correct. If no signer obtains
-the roots independently, a threshold of signatures attests only that
-several parties received the same document from the same source. An
-incorrect nullifier root is not a remote failure: if the set behind it
-omits a nullifier revealed on Zcash mainnet before the snapshot, the
-holder of the spent note can prove it unspent and vote with it as well
-as with the note that replaced it, and an index that mishandles a chain
-reorganisation can produce such a set with no malice involved.
-Independent derivation is what makes attestation meaningful: a signature
-threshold multiplies an underlying check, and without the check there is
-nothing to multiply.
-
-Independence here is a property of the source, not of the effort. Each
-administrator reads both roots from a Zcash node under its own control,
-rather than accepting values supplied by the party proposing the round.
-Because the node already serves as that administrator's oracle for Zcash
-state — it is trusted for the block hash at $H$ and for
-$\mathsf{nc}\_\mathsf{root}$ regardless — serving
-$\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ alongside them adds
-no trust assumption that attesting did not already carry. It does add a
-dependency on node implementations maintaining that index, which
-[Snapshot Derivation] requires a deployment to name.
-
 ## Why Bind to a Block Hash
 
 Anchoring a round to a height alone leaves its meaning dependent on
@@ -3185,14 +3156,20 @@ rather than a silent change in the eligible note set.
 
 ## Why Ratification Precedes Voting
 
-A voter deciding whether to take part is deciding whether to expose a
-quantity — their balance at the snapshot, to the extent the protocol
-permits — in exchange for influence over an outcome. That trade exists
-only if the outcome will be produced. A round names
-$\mathsf{ea}\_\mathsf{pk}$, but a public key is not a statement by
-anybody that they will use the corresponding shares. A statement
-collected after the round records what happened; one collected before it
-opens is an input the voter can act on.
+A round names $\mathsf{ea}\_\mathsf{pk}$, but a public key is not a
+statement by anybody that they will use the corresponding shares. A
+voter who delegates and votes does work, and does it in the expectation
+that the round will produce a result. A statement collected after the
+round records what happened; one collected before it opens is an input
+the voter can act on. Ratification also carries the trustees'
+independent check of the snapshot roots, so a round that opens has had
+its snapshot verified by every party that can decrypt its result, not
+only by the party that proposed it.
+
+Ratification is unanimous for the reason stated in [Ratification]: the
+threshold $t$ is the number of trustees needed at tally time, and a
+round that opens with exactly that many committed has no margin for the
+loss of any of them.
 
 ## Why a Separate Reveal Window
 
@@ -3227,25 +3204,6 @@ round enters REVEALING. A wallet syncs the round's tree once, after
 voting closes, rather than maintaining a witness across the voting
 window.
 
-## Why the Chain Does Not Validate the Snapshot Roots
-
-The complete remedy is for the vote chain to compute the snapshot roots
-itself, so that they are consensus data rather than an input and no
-verifier depends on administrators having performed
-[Snapshot Derivation]. That requires every validator to follow Zcash
-mainnet state, by running a Zcash node or trusting one, and to agree on
-the value it reports: a change to the vote chain's consensus rules,
-which this document does not make. The
-roots are specified so that the change remains available. They are
-deterministic functions of Zcash consensus state with an explicit
-derivation procedure, so adding validation later means validators
-implementing [Snapshot Derivation], not redefining the roots. Until
-then a round's snapshot is only as correct as administrators' adherence
-to [Round Attestation], and this document states that dependency rather
-than leaving it implicit.
-
-
-
 # Deployment
 
 This ZIP does not specify a consensus change to the Zcash mainchain.
@@ -3277,21 +3235,16 @@ section.
 
 | Parameter | Why it is published |
 |---|---|
-| The decryption threshold $t$ and holder count $n$ | Bounds every amount-privacy claim in the protocol; see [Election Authority Key Ceremony]. |
-| The organisation holding each election authority key share, and its registered Pallas key | Allows the role separation required in [Ratification] to be checked, and lets any party recompute the ceremony's verification keys. |
-| The ceremony timeouts: commitment, dealing, complaint and acknowledgement | See [Election Authority Key Ceremony]. |
+| The decryption threshold $t$ and trustee count $n$ | Bounds every amount-privacy claim in the protocol; see [Election Authority Key Ceremony]. |
+| The organisation acting as each trustee, its account key and its ceremony key | Allows the role separation required in [Election Authority Key Ceremony] to be checked, lets wallets verify acknowledgements, and lets any party recompute the ceremony's verification keys. |
+| The ceremony timeouts and maximum attempts | See [Election Authority Key Ceremony]. |
 | The reveal window length, $\mathsf{reveal}\_\mathsf{end}\_\mathsf{time} - \mathsf{vote}\_\mathsf{end}\_\mathsf{time}$ | Bounds the period in which a wallet must return to reveal; see [Round Lifecycle]. |
-| Zcash node implementations and versions relied on for $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ | That root is not Zcash consensus data, so which implementation served it is part of what a verifier checks; see [Snapshot Derivation]. |
-| The administrators and their signing keys | Establishes whose attestations wallets recognise; see [Round Attestation]. |
-| The administrator signature threshold $m$ | At least 2; see [Round Attestation]. |
+| The poll runner and its signing key | Establishes whose poll signature wallets recognise; see [Poll Signature]. |
 | $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
 | The key-share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
 
 The RECOMMENDED value of $\mathsf{min}\_\mathsf{confirmations}$ is 100
-blocks. The poll runner and each administrator SHOULD publish the
-software and version they used to derive the snapshot roots, and the
-values they derived, so that a disagreement about the snapshot can be
-told apart from a disagreement about the derivation.
+blocks.
 
 ## Tally units
 
@@ -3413,23 +3366,18 @@ the implementation.
   relay per share and an independent network path per submission, and
   relies on the client to honour both. A relay operator that also
   operates the client's network path, or a coalition of relays pooling
-  arrival logs with a coalition of $t$ key-share holders, could
+  arrival logs with a coalition of $t$ trustees, could
   correlate by metadata what the protocol does not correlate by
-  content. Role separation between relays and key-share holders is an
+  content. Role separation between relays and trustees is an
   operational requirement for `draft-valargroup-shielded-voting-setup`
   [^voting-setup].
-- **Snapshot root validation by consensus**: see
-  [Why the Chain Does Not Validate the Snapshot Roots].
-- **Administrator keys**: wallets identify administrator keys as
-  `draft-valargroup-shielded-voting-wallet-api` [^wallet-api]
-  specifies, but how administrators are chosen, and how their keys are
-  registered and rotated, is not specified.
-- **Attestation timing**: an attestation covers
-  $\mathsf{ea}\_\mathsf{pk}$, which exists only once the EA key ceremony
-  completes, and the round opens as soon as it is ratified. Conforming
-  wallets therefore cannot take part in a round until administrators
-  attest to it after it opens, which shortens the effective voting window
-  by however long that takes.
+- **Nullifier index maintenance.** A Zcash consensus node that serves
+  $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ must maintain the
+  index across chain reorganisations — tracking the block hash at which
+  each nullifier entered, rolling back to the fork point before
+  applying a new best chain, and refusing to serve a root for a block
+  it has not confirmed is on its best chain. That guidance belongs with
+  the tree's specification in [^balance-proof] and is not yet there.
 - Open issues related to the balance proof are tracked in [^balance-proof].
 
 
