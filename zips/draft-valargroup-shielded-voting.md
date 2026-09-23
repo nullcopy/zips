@@ -2450,9 +2450,8 @@ specified; see [Open issues].
 state alone. An excluded transaction leaves no record on the chain that
 excluded it. Available signals are: a count of votes cast against the
 count of shares revealed; the contents of honest vote chain nodes'
-mempools,
-compared with what was subsequently included; and voters observing
-that their own shares never appeared. The last is currently unavailable
+mempools, compared with what was subsequently included; and voters
+observing that their own shares never appeared. The last is currently unavailable
 in practice, because a voter querying the chain for their own share
 nullifiers reveals which nullifiers are theirs; see [Open issues].
 
