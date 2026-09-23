@@ -462,12 +462,11 @@ protocol conceals the query.
   onboarding, nullifier service operation, deployment architecture, and
   audit procedures. These are specified in
   `draft-valargroup-shielded-voting-setup` [^voting-setup].
-- The service interface of a relay, its availability and fault
-  tolerance, and the relationship between relay operators and other
-  roles are out of scope; they belong with the operational
-  specification. The rules a client follows in handing messages to
-  relays are in scope (see [Share Submission]), because they determine
-  whether this ZIP's privacy claims hold.
+- The service interface of a relay, beyond the constraints stated in
+  [Share Submission], and its availability and fault tolerance, are out
+  of scope; they belong with the operational specification. The rules
+  a client follows in handing messages to relays are in scope, because
+  they determine whether this ZIP's privacy claims hold.
 - Post-quantum security of the El Gamal encryption layer is out of
   scope.
 - Retrieval of nullifier non-membership proofs by clients that do not
@@ -2082,16 +2081,19 @@ structure specified in `draft-valargroup-shielded-voting-wallet-api`
 [^wallet-api]. The vote manager supplies `snapshot_height`,
 `snapshot_blockhash`, `proposals_hash`, `vote_end_time`,
 `reveal_end_time`, `nullifier_imt_root`, `nc_root`, `proposals`,
-`title`, and
-`description`; the transaction's signer becomes the `creator` field
+`key_share_holders`, `title`, and `description`; the transaction's
+signer becomes the `creator` field
 of the resulting `VoteRound`. The chain derives the remaining
 fields (`vote_round_id`, `status`, `ea_pk`, `created_at_height`)
 at inclusion or during the round lifecycle.
 
 The chain rejects the transaction if the signer is not the current
 vote manager, if the `proposals` field violates the constraints
-in [Proposals and Decisions], or if `reveal_end_time` is not later
-than `vote_end_time` by at least $2\Delta$ (see [Round Lifecycle]).
+in [Proposals and Decisions], if `reveal_end_time` is not later
+than `vote_end_time` by at least $2\Delta$ (see [Round Lifecycle]), or
+if `key_share_holders` names fewer than two holders or any holder
+without a registered Pallas public key (see
+[Election Authority Key Ceremony]).
 
 The vote chain derives the 32-byte `vote_round_id` from the
 transaction fields after inclusion, using the Poseidon construction
@@ -2207,11 +2209,12 @@ constructions used below are specified in
 registered as such for the round, each with a registered Pallas public
 key for receiving encrypted shares. Let $n$ be their number and index
 them $1, \ldots, n$. The round's decryption threshold is
-$t = \lceil n/2 \rceil + 1$, with a minimum of 2. How holders are
-admitted and how they register keys is specified in
-`draft-valargroup-shielded-voting-setup` [^voting-setup]; see
-[Open issues] for what that document does not yet specify. A key-share
-holder MUST NOT be a validator of the same round.
+$t = \lceil n/2 \rceil + 1$, with a minimum of 2. The holder set is
+named in the round creation transaction (see [Poll Creation]); how
+holders are admitted and how they register keys is specified in the
+"Onboarding Key-Share Holders" section of
+`draft-valargroup-shielded-voting-setup` [^voting-setup]. A key-share
+holder MUST NOT be a validator or a relay operator of the same round.
 
 **Round 1: commitment.** Each holder $i$:
 
@@ -2325,8 +2328,9 @@ leaving retains its share and cannot be compelled to delete it;
 per-round keys bound what that share is worth, since it opens nothing
 in any other round.
 
-**Timing parameters.** A deployment MUST publish the commitment,
-dealing, complaint and acknowledgement timeouts it applies.
+**Timing parameters.** The commitment, dealing, complaint and
+acknowledgement timeouts are chain parameters fixed in the vote chain's
+genesis state. A deployment MUST publish the values it applies.
 
 ### Ratification
 
@@ -3405,14 +3409,6 @@ the implementation.
   that option equals their individual contribution. An opt-in mechanism
   to amend the declared ballot count — lowering, rounding or padding it,
   and proving the amendment in zero knowledge — would mitigate this.
-- **Key-share holder registration.** [Election Authority Key Ceremony]
-  requires a key-share holder set, disjoint from the validator set,
-  each with a registered Pallas public key. The operational
-  specification (`draft-valargroup-shielded-voting-setup`
-  [^voting-setup]) currently registers Pallas keys only for
-  validators. How key-share holders are admitted, how they register
-  keys, and how their addresses are recognised by the chain for
-  ceremony and acknowledgement transactions is not yet specified.
 - **Metadata linkage through relays.** [Share Submission] requires one
   relay per share and an independent network path per submission, and
   relies on the client to honour both. A relay operator that also
