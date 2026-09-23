@@ -678,7 +678,7 @@ of the Poseidon instantiation specified in [Poseidon Instantiation].
 
 where:
 
-- $\mathsf{snapshot}\_\mathsf{height} \in \{ 0 .. 2^{64}-1 \}$ — the
+- $\mathsf{snapshot}\_\mathsf{height} \in \{ 0 .. 2^{32}-1 \}$ — the
   Zcash mainnet block height of the chosen snapshot, encoded as a
   Pallas base field element.
 - $\mathsf{bh}\_\mathsf{lo}, \mathsf{bh}\_\mathsf{hi} \in \{ 0 .. 2^{128}-1 \}$
@@ -2081,8 +2081,8 @@ structure specified in `draft-valargroup-shielded-voting-wallet-api`
 [^wallet-api]. The vote manager supplies `snapshot_height`,
 `snapshot_blockhash`, `proposals_hash`, `vote_end_time`,
 `reveal_end_time`, `nullifier_imt_root`, `nc_root`, `proposals`,
-`key_share_holders`, `title`, and `description`; the transaction's
-signer becomes the `creator` field
+`key_share_holders`, `min_confirmations`, `title`, and `description`;
+the transaction's signer becomes the `creator` field
 of the resulting `VoteRound`. The chain derives the remaining
 fields (`vote_round_id`, `status`, `ea_pk`, `created_at_height`)
 at inclusion or during the round lifecycle.
