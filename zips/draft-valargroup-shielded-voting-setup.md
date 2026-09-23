@@ -60,32 +60,47 @@ Bonded validator
   `x/staking` module [^cosmos-staking]: its delegation is committed,
   it participates in consensus, and it is eligible to produce blocks.
 
-Submission server
-: An untrusted service that accepts encrypted vote share payloads
-  from voters and submits the corresponding share reveal
-  transactions to the vote chain. Share distribution, submission
-  scheduling and the payload format are specified in
+Relay
+: An untrusted store-and-forward service to which a voter's client MAY
+  hand a finished share reveal message, together with the time at which
+  to submit it, for later submission to the vote chain. A relay
+  constructs no proofs and receives no witness material. See
+  [Relay Operator] under Roles, and the "Share Submission" section of
   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+
+Relay operator
+: The entity that runs one or more relays. See [Relay Operator] under
+  Roles for responsibilities.
+
+Ironwood pool
+: The Zcash shielded pool over which votes are weighted. The Ironwood
+  pool uses the Orchard protocol: its notes, key hierarchy, note
+  commitment tree, nullifiers, signatures and proving system are those
+  of Orchard. References in this ZIP to Orchard keys, notes, nullifiers
+  or circuits refer to those constructions as used in the Ironwood pool.
 
 Election Authority (EA)
 : The El Gamal keypair under which a round's vote shares are encrypted,
   and whose private key decrypts the aggregate tally. A fresh keypair is
-  generated for each round, and its private key is split into shares
-  distributed to key-share holders, so that decrypting the tally requires
-  a threshold of them acting together. See
-  the "Election Authority Key Ceremony" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol] for how the keypair is generated and
-  distributed, and the "Election Authority Key Custody" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol] for what the party
-  generating it holds while it does so.
+  generated for each round by distributed key generation among the
+  round's key-share holders, so that no party ever holds the private
+  key and decrypting the tally requires a threshold of holders acting
+  together. See the "Election Authority Key Ceremony" section of
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol] for the
+  ceremony, and the "Election Authority Key Custody" section of
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol] for what
+  each holder retains and for how long.
 
 Key-share holder
-: A holder of a share of a round's Election Authority private key.
-  See the "Ratification" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+: An organisation admitted to a round's holder set, which holds a share
+  of the round's Election Authority private key produced by the key
+  ceremony. Not a validator or relay operator of the same round. See
+  [Key-Share Holder] under Roles, and the "Ratification" section of
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Snapshot height
-: The Zcash mainnet block height at which eligible Orchard note balances
-  are captured. See the "Snapshot Configuration" section of
+: The Zcash mainnet block height at which eligible Ironwood pool
+  balances are captured. See the "Snapshot Configuration" section of
 `draft-valargroup-shielded-voting` [^draft-voting-protocol] for constraints.
 
 For definitions of cryptographic terms including *alternate nullifier*,
@@ -98,10 +113,12 @@ EA key ceremony terms, see the "Election Authority Key Ceremony" section of
 # Abstract
 
 This ZIP specifies how to operate the infrastructure for Zcash shielded
-coinholder voting: the operator roles, how validators and nullifier
-services are provisioned and onboarded, how a deployment is organised so
-that the parties who can group a voter's shares are not the parties who
-can decrypt them, and the procedures by which any party audits a round.
+coinholder voting: the operator roles, how validators, key-share
+holders, relays and nullifier services are provisioned and onboarded,
+how a deployment is organised so that no organisation both sees a
+voter's share reveals arrive, or decides which of them enter blocks, and
+holds key material that can decrypt them, and the procedures by which
+any party audits a round.
 
 The protocol itself — the cryptographic constructions, the delegation,
 vote, reveal and tally phases, and the consensus rules a voting round
@@ -137,28 +154,40 @@ operational layer.
   and block-inclusion timing are a permanent public record.
 - Bootstrap operators learn the network identities of validators
   during onboarding (see [Onboarding Validators]).
-- Validator power distribution affects the trust model for the EA
-  key ceremony. See the "Election Authority Key Ceremony" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol] and
-  the "Election Authority Key Custody" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol].
+- A relay operator learns, from each share reveal message handed to
+  it, what a chain observer learns from the same message once it is
+  recorded, plus the network origin of the client that handed it over
+  and the requested submission time. See [Relay Operator] and the
+  "Privacy Implications" section of `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol].
+- The composition of the key-share holder set, and the decryption
+  threshold $t$ the ceremony fixes from its size, bound every
+  amount-privacy claim in the protocol. See the "Election Authority
+  Key Ceremony" section of `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol] and the "Election Authority Key Custody"
+  section of `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol].
 - Validators holding sufficient stake to control block production can
-  decline to include share reveal transactions. Because
-  `vote_decision` appears in cleartext in every share reveal, selecting
-  which votes to exclude by the option they support requires no
-  decryption and no key material. See the "Transaction Inclusion" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol].
-- Where validators also hold election authority key shares, a coalition
-  at the decryption threshold can additionally determine the weight of
-  a vote before deciding whether to include it. This is one of the
-  reasons the roles are separated in [Validator].
+  decline to include share reveal transactions. A share reveal exposes
+  its proposal identifier but not its decision, and per-option totals
+  are not public while a round is open, so validators acting alone
+  cannot select which reveals to exclude by the option they support;
+  they can exclude by proposal, by time of arrival, by network origin,
+  or wholesale. See the "Transaction Inclusion" section of
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+- A coalition of validators and $t$ key-share holders could decrypt
+  reveals as they arrive and exclude them by option and by weight. A
+  coalition of relay operators and $t$ key-share holders could group a
+  voter's shares by the metadata relays see and decrypt them. These
+  are the reasons the three operator sets are required to be disjoint
+  in [Role Separation].
 
 
 # Requirements
 
 - A new poll runner can set up infrastructure and conduct a voting round
   by following this specification and the referenced companion ZIPs.
-- A Zcash coinholder with eligible Orchard funds at the round's
+- A Zcash coinholder with eligible Ironwood pool funds at the round's
   snapshot height can participate in the voting round using a
   conforming wallet client.
 - The vote chain operates as a public, verifiable ledger — anyone can run
@@ -167,8 +196,10 @@ operational layer.
 - The capabilities that validators hold over the outcome of a round,
   including the ability to exclude transactions, are documented rather
   than left implicit.
-- No organisation operates more than one of the three roles that
-  together would allow it to both group and decrypt a voter's shares.
+- No organisation holds more than one of the three roles — validator,
+  relay operator, key-share holder — any two of which together would
+  allow it to select share reveals by option or to group and decrypt a
+  voter's shares.
 
 
 # Non-requirements
@@ -182,7 +213,7 @@ operational layer.
 ## System Overview
 
 The coinholder voting system operates on a purpose-built Cosmos SDK vote
-chain. Zcash mainnet snapshots provide the set of eligible Orchard note
+chain. Zcash mainnet snapshots provide the set of eligible Ironwood pool
 balances.
 
 The vote chain stores:
@@ -192,8 +223,11 @@ The vote chain stores:
 - Three **nullifier sets**: governance nullifiers (alternate nullifiers
   from note claims), VAN nullifiers (from delegation consumption), and
   share nullifiers (from share reveals).
-- An **encrypted share accumulator** per (proposal, decision): the
-  homomorphic sum of El Gamal ciphertexts for each vote option.
+- An **encrypted share accumulator** per (proposal, option position):
+  the running component-wise sum of the El Gamal ciphertexts at that
+  position in every revealed share.
+- The round's **final VCT root**, recorded when the round enters
+  REVEALING, to which every share reveal in the round is anchored.
 
 The vote chain verifies a zero-knowledge proof for each transaction type:
 delegation, vote, and share reveal. The proof circuits are specified in
@@ -205,22 +239,25 @@ A complete deployment consists of:
 
 - **Vote chain nodes** — one or more `svoted` instances running CometBFT
   consensus.
-- **Submission servers** — untrusted services that accept vote share
-  payloads from clients that cannot construct proofs locally, and
-  submit the corresponding share reveal transactions on their behalf.
-  These MUST be operated separately from the vote chain nodes and from
-  the election authority key-share holders, and MUST NOT run in the
-  `svoted` process; see [Validator] and [Why Roles Are Separated].
-  Earlier deployments bundled the submission server into the `svoted`
-  binary. Share distribution, submission scheduling and the payload
-  format are specified in `draft-valargroup-shielded-voting`
-  [^draft-voting-protocol].
+- **Relays** — untrusted store-and-forward services that accept
+  finished share reveal messages from clients that will not be online
+  across their submission schedule, and submit each message at the time
+  the client requested. These MUST be operated separately from the vote
+  chain nodes and from the election authority key-share holders, and
+  MUST NOT run in the `svoted` process; see [Relay Operator],
+  [Role Separation] and [Why Roles Are Separated]. Earlier deployments
+  bundled a submission server, which also constructed the reveal
+  proofs, into the `svoted` binary. The rules a client follows in
+  handing messages to relays are specified in the "Share Submission"
+  section of `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol]; the relay's service interface is not yet
+  specified in any normative document (see [Open Issues]).
 - **Nullifier service** — a PIR server that provides private nullifier
   exclusion proofs to voters (see [Nullifier Service]).
 - **Vote configuration document** — a per-round document published
   by the vote manager that lists the network endpoints of the vote
-  chain nodes and nullifier service operators participating in the
-  round. The document format and distribution rules are specified
+  chain nodes, relays and nullifier service operators participating in
+  the round. The document format and distribution rules are specified
   in `draft-valargroup-shielded-voting-wallet-api`
   [^draft-wallet-api]; see also [Vote Configuration Publication].
 
@@ -261,36 +298,103 @@ No other account can claim or reassign the role.
 
 ### Validator
 
-Validators participate in consensus, the EA key ceremony (see
-the "Election Authority Key Ceremony" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol]), and automatic tally computation.
-Each validator maintains three keypairs:
+Validators participate in consensus and execute the chain's automatic
+combination of partial decryptions into a tally (see the "Tally"
+section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]).
+Each validator maintains two keypairs:
 
 - **Consensus keypair**: used for CometBFT consensus.
 - **Account keypair**: used for submitting chain transactions.
-- **Pallas keypair**: used for ECIES key exchange during the EA ceremony.
 
 Validators join the network by following the flow described in
 [Onboarding Validators].
 
-A validator MUST NOT also operate a submission server for the same
-round, and MUST NOT also hold a share of the election authority key
-for the same round.
+Validators take no part in the election authority key ceremony and hold
+no share of the election authority key; the ceremony is run by the
+key-share holders (see [Key-Share Holder]). What validators can and
+cannot do to a round through their control of transaction inclusion is
+specified in the "Transaction Inclusion" section of
+`draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
-These three roles — validating blocks, receiving voters' share
-payloads, and holding key material that can decrypt those shares —
-were previously performed by the same operators, on the reasoning that
-introducing a separate operator class would add a trust assumption
-without clear benefit. That reasoning is inverted: co-locating them
-does not avoid an assumption, it conjoins two that must remain
-independent. A submission server can determine which shares belong to
-one voter, and a key share holder can decrypt them; a party holding
-both roles needs no collusion to do both. See
-[Why Roles Are Separated].
+A validator MUST NOT also be a relay operator or a key-share holder of
+the same round; see [Role Separation].
 
-A deployment MUST publish which organisation operates each role for a
-round, so that the independence of the three sets can be checked rather
-than assumed.
+### Relay Operator
+
+A relay operator runs one or more relays (see
+[Deployment Architecture]). A relay receives a finished share reveal
+message together with the time at which the client asks for it to be
+submitted, holds it until that time, and submits it to a vote chain
+node unaltered. It receives no witness material and constructs no
+proofs. A client hands a relay at most one share of any vote, over a
+network connection used for no other share of that vote, as specified
+in the "Share Submission" section of `draft-valargroup-shielded-voting`
+[^draft-voting-protocol], which also states what a relay MUST and MUST
+NOT require of the clients it serves.
+
+A relay operator is trusted for availability only. It learns, from the
+message it holds, what a chain observer learns from the same message
+once it is recorded, plus the network origin of the client that handed
+it over and the requested submission time. A relay holding one share of
+a vote can group nothing. What a coalition of relay operators and
+key-share holders could do with that metadata is why the role is
+separated from key-share holding in [Role Separation].
+
+The role is OPTIONAL: a client that is online across its submission
+schedule submits its share reveal messages directly. Because a client
+MUST select a distinct relay for each of its $N_s$ share reveal
+messages, a deployment that offers relayed submission SHOULD make at
+least $N_s$ relays available to clients; with fewer, a client can relay
+only some of its shares and must submit the rest directly.
+
+A relay operator MUST NOT also be a validator or a key-share holder of
+the same round; see [Role Separation].
+
+### Key-Share Holder
+
+A key-share holder is an organisation admitted to a round's holder set.
+The holders of a round run the election authority key ceremony among
+themselves over the vote chain; each ends it holding a share of the
+round's election authority private key, and no party ever holds the key
+itself (see the "Election Authority Key Ceremony" section of
+`draft-valargroup-shielded-voting` [^draft-voting-protocol]).
+
+Each key-share holder maintains two keypairs:
+
+- **Account keypair**: used for submitting ceremony, complaint,
+  acknowledgement and partial decryption transactions. Its address is
+  the holder address the vote chain recognises for those transactions.
+- **Pallas keypair**: used to receive, by ECIES, the shares dealt to
+  the holder during the ceremony.
+
+A key-share holder MUST NOT also be a validator or a relay operator of
+the same round; see [Role Separation].
+
+A key-share holder's duties for a round are to:
+
+1. Take part in each round of the key ceremony within the published
+   commitment, dealing, complaint and acknowledgement timeouts.
+2. Verify the share it derives against its verification key, and
+   acknowledge it on chain only if that check passes. The
+   acknowledgement is the holder's ratification of the round (see the
+   "Ratification" section of `draft-valargroup-shielded-voting`
+   [^draft-voting-protocol]).
+3. Erase the ceremony material the protocol requires it to erase once
+   it has dealt its shares.
+4. Submit a partial decryption, with its DLEQ proof, for each
+   accumulator to be decrypted while the round is TALLYING.
+5. Destroy its share at the end of the deployment's published retention
+   period (see the "Election Authority Key Custody" section of
+   `draft-valargroup-shielded-voting` [^draft-voting-protocol]).
+
+Key-share holders join by following the flow described in
+[Onboarding Key-Share Holders].
+
+A holder that causes a ceremony to fail by not participating is excluded
+from the restarted ceremony by the protocol. A holder that repeatedly
+causes ceremony restarts is removed from the holder set by the vote
+manager. Each holder's participation record, and any removal from the
+holder set, MUST be published.
 
 ### Nullifier Service Operator
 
@@ -302,6 +406,18 @@ deployment that expects its clients to construct their own proofs need
 not include one. Where a deployment does include one, the retrieval
 protocol it offers is a property of that deployment and is not specified
 here.
+
+### Role Separation
+
+For a given round, the set of validators, the set of relay operators and
+the set of key-share holders MUST be pairwise disjoint: no organisation
+MAY hold more than one of the three roles in the same round. Which
+capabilities each pair of roles would combine is set out in
+[Why Roles Are Separated].
+
+A deployment MUST publish which organisation operates each role for a
+round (see [Deployment]), so that the independence of the three sets can
+be checked rather than assumed.
 
 ## Vote Chain Infrastructure
 
@@ -320,8 +436,8 @@ Initialization proceeds as follows:
    round.
 
 2. **Generate the bootstrap operator's keypairs.** Generate a
-   CometBFT consensus keypair, a Cosmos account keypair, and a
-   Pallas keypair (see [Validator] for the role of each).
+   CometBFT consensus keypair and a Cosmos account keypair (see
+   [Validator] for the role of each).
 
 3. **Construct the genesis block.** Populate the genesis state
    with:
@@ -331,11 +447,12 @@ Initialization proceeds as follows:
    - An initial balance for the vote manager account, in the
      chain's native token (`usvote`), sized to fund the planned
      validator set via subsequent authorized transfers.
-   - A minimum ceremony validator count required before the EA
-     key ceremony can proceed.
    - The bootstrap operator's own validator entry, bonded with
-     consensus voting power and with its Pallas public key
-     registered.
+     consensus voting power.
+   - The election authority key ceremony timeouts (commitment,
+     dealing, complaint and acknowledgement), which are chain
+     parameters (see the "Election Authority Key Ceremony" section of
+     `draft-valargroup-shielded-voting` [^draft-voting-protocol]).
    - The standard Cosmos SDK module states (auth, bank, staking)
      as required by the Cosmos SDK runtime.
 
@@ -368,7 +485,7 @@ A new validator joins the vote chain by following these steps:
    and initialize a local node directory.
 
 3. **Generate keypairs.** Generate the validator's consensus
-   keypair, account keypair, and Pallas keypair (see [Validator]).
+   keypair and account keypair (see [Validator]).
 
 4. **Sync the chain.** Start the node, connect to the active
    validators listed in the vote configuration document via
@@ -383,24 +500,63 @@ A new validator joins the vote chain by following these steps:
    funding mechanism).
 
 7. **Register on-chain.** Once funds are received, submit the
-   validator registration transaction that wraps a standard
-   Cosmos staking validator creation message together with the
-   validator's Pallas public key, atomically binding the key to
-   the new validator.
+   validator registration transaction, which wraps a standard
+   Cosmos staking validator creation message.
 
 The amount transferred at step 6 determines the new validator's
-consensus voting power. The vote chain rejects raw Cosmos staking
-validator creation messages: every validator MUST be registered
-through the wrapped form so that a Pallas public key is bound at
-creation time. A validator without a registered Pallas key is
-bonded for consensus but cannot participate in the EA ceremony
-(see [Validator]).
+consensus voting power. Validators register no Pallas key: they take
+no part in the EA key ceremony (see [Validator]). Key-share holders
+register theirs by the flow in [Onboarding Key-Share Holders].
 
 The reference implementation (see [Reference implementation])
 includes an automated `join.sh` script that performs the above
 steps. The script is parameterized by the vote configuration
 document URL; the same script is used for any poll and is not
 specialized per poll.
+
+### Onboarding Key-Share Holders
+
+The vote manager admits key-share holders. The holder set of a round is
+fixed at round creation: the round creation transaction names the
+admitted holders, and a party admitted afterwards receives no share for
+that round and waits for the next (see the "Election Authority Key
+Ceremony" section of `draft-valargroup-shielded-voting`
+[^draft-voting-protocol]).
+
+A new key-share holder joins by following these steps:
+
+1. **Generate keypairs.** Generate the holder's account keypair and
+   Pallas keypair (see [Key-Share Holder]).
+
+2. **Apply for admission.** Send the vote manager the account address,
+   the Pallas public key and the identity of the operating
+   organisation, through a channel that authenticates the applicant.
+
+3. **Wait for funding.** The vote manager reviews the application and
+   funds the holder's account via an authorized transfer (see
+   [Bootstrap Operator] for the funding mechanism), so that the holder
+   can submit its ceremony and tally transactions. The amount confers
+   no consensus voting power: a key-share holder is not a validator.
+
+4. **Register on-chain.** Once funds are received, submit the
+   key-share holder registration transaction, which binds the Pallas
+   public key to the holder's address. From then on the vote chain
+   recognises that address for the holder's ceremony, complaint,
+   acknowledgement and partial decryption transactions.
+
+5. **Admission to a round.** The vote manager names the registered
+   holder in the holder set of a subsequently created round. The vote
+   manager MUST NOT name a holder whose Pallas public key is not
+   registered, since such a holder cannot receive the shares dealt to
+   it and would cause the ceremony to fail.
+
+The vote manager MUST publish the holder set of each round, with each
+holder's registered Pallas public key, as part of the round's deployment
+record (see [Deployment]); the protocol draft's "Deployment" section
+lists the same items so that any party can recompute the ceremony's
+verification keys. The vote manager MUST also publish each removal from
+the holder set, with the participation record that motivated it (see
+[Key-Share Holder]).
 
 ### Nullifier Service
 
@@ -444,11 +600,12 @@ document from that channel; the vote chain itself does not
 provide a service-discovery endpoint.
 
 The vote manager publishes the initial document once the genesis
-validator is producing blocks. New validators and nullifier service
-operators are added by proposing updates to the document, which the
-vote manager reviews and applies; for validators this proposal is
-automated by the join.sh flow described in [Onboarding Validators],
-while nullifier service operators propose their entries directly.
+validator is producing blocks. New validators, relay operators and
+nullifier service operators are added by proposing updates to the
+document, which the vote manager reviews and applies; for validators
+this proposal is automated by the join.sh flow described in
+[Onboarding Validators], while relay operators and nullifier service
+operators propose their entries directly.
 The document is incremental — new entries are added without
 removing earlier ones — and any active entry can serve as an entry
 point for new joiners; there is no distinguished seed node.
@@ -479,18 +636,34 @@ states who carries out each step.
    pipelines (see [Nullifier Service]) have run to that height before
    the round opens.
 2. **Creation.** The vote manager submits the round creation
-   transaction. Where a chain is bootstrapped for the round, the roots
-   are also passed into genesis state (see [Genesis Validator Setup]).
+   transaction, naming the round's key-share holder set (see
+   [Onboarding Key-Share Holders]). Where a chain is bootstrapped for
+   the round, the roots are also passed into genesis state (see
+   [Genesis Validator Setup]).
 3. **Attestation.** Each administrator reads both roots from a Zcash
    consensus node under its own control, confirms they match the
    round, and publishes its attestation. Reading the roots from the
    proposer, or comparing bytes against the proposer's document, is not
    attestation.
-4. **Ceremony and ratification.** Key-share holders take part in the
-   election authority key ceremony and acknowledge their verified
-   shares on chain; those acknowledgements ratify the round, and it
-   opens once enough have been recorded.
-5. **Tally.** After `vote_end_time`, key-share holders submit partial
+4. **Ceremony and ratification.** Key-share holders run the
+   distributed key generation among themselves on the vote chain,
+   within the published ceremony timeouts; each verifies its share and
+   acknowledges it on chain. Those acknowledgements ratify the round,
+   and it enters ACTIVE once at least the decryption threshold of them
+   have been recorded. Validators take no part in the ceremony.
+5. **Voting.** While the round is ACTIVE, until `vote_end_time`, the
+   chain accepts delegation and vote transactions from coinholders
+   (see [Coinholder Participation]).
+6. **Reveal.** At `vote_end_time` the round enters REVEALING and the
+   VCT is frozen at its final root. Until `reveal_end_time`, voters'
+   clients construct their share reveal messages and submit them,
+   directly or by handing them to relays; relay operators submit each
+   message they hold at its requested time. A deployment SHOULD
+   publish, from more than one operator, the count of share reveal
+   transactions accepted into the mempool alongside the count included
+   in blocks, as described in the "Transaction Inclusion" section of
+   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+7. **Tally.** After `reveal_end_time`, key-share holders submit partial
    decryptions; the chain combines them and publishes the tally, or
    finalizes without one if too few arrive in time.
 
@@ -505,26 +678,26 @@ from the coinholder's perspective.
 ### Eligibility
 
 Voting weight derives from the value held in a coinholder's
-Orchard notes at the round's snapshot height (see
+Ironwood pool notes at the round's snapshot height (see
 the "Snapshot Configuration" section of
 `draft-valargroup-shielded-voting` [^draft-voting-protocol]). Funds held in Sapling or transparent
 pools at the snapshot height carry no voting weight; coinholders
 who wish to participate with such funds MUST migrate them to
-Orchard before the snapshot height.
+the Ironwood pool before the snapshot height.
 
 ### Wallet Setup
 
 A wallet client obtains the vote configuration document for the
 round (see [Vote Configuration Publication]), which lists the
-vote chain endpoints, the nullifier service endpoints, and the
-protocol versions in use. The configuration document schema and
-the wallet-side validation rules are specified in
+vote chain endpoints, the relay endpoints, the nullifier service
+endpoints, and the protocol versions in use. The configuration
+document schema and the wallet-side validation rules are specified in
 `draft-valargroup-shielded-voting-wallet-api`
 [^draft-wallet-api].
 
 ### Participation Flow
 
-For each Orchard note the coinholder uses as voting weight, the
+For each Ironwood pool note the coinholder uses as voting weight, the
 wallet performs:
 
 1. **Obtain a non-membership proof.** Prove that the note's standard
@@ -556,15 +729,24 @@ For each proposal the coinholder votes on, the wallet performs:
    Vote Phase of `draft-valargroup-shielded-voting`
    [^draft-voting-protocol].
 
-4. **Submit encrypted vote shares.** Send the share payloads to
-   submission server endpoints, which queue them and submit
-   share reveal transactions on the coinholder's behalf at
-   client-specified times. Share decomposition, server selection and
-   submission scheduling are specified in
+4. **Reveal the vote's shares.** At `vote_end_time` the round enters
+   REVEALING and the VCT is frozen. The wallet must come back online at
+   least once during the reveal window, before `reveal_end_time`: it
+   obtains the round's final VCT root and a Merkle path for its Vote
+   Commitment against that root, constructs a Vote Reveal Proof for
+   each of the vote's $N_s$ shares, and draws a submission schedule.
+   It then either submits the share reveal messages itself at the
+   scheduled times, remaining online across the schedule, or hands
+   each message, with its scheduled time, to a distinct relay (see
+   [Relay Operator]) over a separate network connection per message.
+   No witness material leaves the wallet in either case. A wallet that
+   does not return during the reveal window loses its vote. Proof
+   construction, the independence rules and the schedule are specified
+   in the "Share Submission" and "Submission Timing" sections of
    `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
-After `vote_end_time`, the coinholder may verify the final tally
-following [Verification and Auditing].
+After the round is finalized, the coinholder may verify the final
+tally following [Verification and Auditing].
 
 ## Verification and Auditing
 
@@ -572,7 +754,11 @@ The vote chain is publicly readable. Any party running a full
 node of the chain — a validator, the vote manager, or an
 independent observer — can verify all aspects of a voting round
 by replaying chain state and applying the verification
-procedures defined in companion ZIPs.
+procedures defined in companion ZIPs. The checks a verifier MUST
+perform, their order, and what each does and does not establish are
+specified in the "Verification" section of
+`draft-valargroup-shielded-voting` [^draft-voting-protocol]; this
+section states how a full-node operator carries them out.
 
 This section uses the following procedures imported by
 reference:
@@ -613,13 +799,16 @@ voting round across three layers:
   set integrity by replaying every accepted transaction and
   checking that no nullifier appears twice.
 
-- **Tally correctness.** A full-node operator re-aggregates the
-  encrypted share ciphertexts per (`proposal_id`, `vote_decision`)
-  from the on-chain share reveal transactions, applies the DLEQ
-  Proof Verification to each stored partial decryption,
-  re-derives the Lagrange combination, and confirms the
-  decrypted aggregate following the Tally procedure in
-  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+- **Tally correctness.** A full-node operator confirms that every
+  share reveal transaction in the round is anchored to the round's
+  final VCT root, re-aggregates the position-$j$ ciphertexts of those
+  transactions into a per-(`proposal_id`, option position $j$)
+  accumulator for each option position, applies the DLEQ Proof
+  Verification to each stored partial decryption, re-derives the
+  Lagrange combination for each accumulator that is to be decrypted,
+  and confirms the published per-option totals following the Tally
+  procedure in `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol].
 
 The three layers above verify that the transactions in a round are
 well formed and correctly accumulated *with respect to* the round's
@@ -653,31 +842,45 @@ the "Transaction Inclusion" section of `draft-valargroup-shielded-voting` [^draf
 ## Why Roles Are Separated
 
 Three roles in this system have to be held by different organisations:
-the validator that decides which transactions enter blocks, the
-submission server that receives voters' share payloads, and the holder
-of a share of the election authority key.
+the validator that decides which transactions enter blocks, the relay
+operator that receives voters' finished share reveal messages, and the
+holder of a share of the election authority key.
 
 Earlier drafts bundled all three into one binary run by one operator
-set, reasoning that validators already participate in the key ceremony,
-so a separate submission server operator class would add a trust
-assumption without clear benefit.
+set, reasoning that validators already participated in the key
+ceremony, so a separate submission server operator class would add a
+trust assumption without clear benefit.
 
 The reasoning treats a trust assumption as a cost to be minimised by
 reducing the number of distinct parties. What matters is not how many
-parties there are, but which capabilities land together. A submission
-server can determine which shares belong to one voter, because the
-payloads it receives carry values common to all shares of a vote. A key
-share holder can, with enough peers, decrypt those shares. Separately,
-neither recovers a voter's balance. Held by the same organisation, they
-do, with no collusion required — and where the same organisation also
-validates, it can act on what it learns by deciding what to include.
+parties there are, but which capabilities land together. No single
+role recovers a voter's balance or decision: a relay holding one share
+of a vote can group nothing, a validator sees ciphertexts it cannot
+open, and a key-share holder can, with enough peers, decrypt individual
+shares but has no way to tell which belong to one vote. Each pair does
+more than either alone:
 
-Separating the roles does not add an assumption. It restores one that
-bundling had quietly removed, by making a coalition necessary where
-previously a single operator sufficed. It also makes the assumption
-checkable: with the operator of each role published, anyone can verify
-that the three sets are disjoint, which is not possible when one
-binary performs all three.
+- **Validators and key-share holders.** A share reveal exposes its
+  proposal identifier but not its decision, so validators acting alone
+  can exclude reveals only by proposal, arrival time, network origin,
+  or wholesale. A coalition of validators and $t$ key-share holders
+  could decrypt reveals as they arrive and exclude them by the option
+  they support and by their weight.
+- **Relay operators and key-share holders.** The protocol publishes
+  nothing that groups the shares of one vote, so what a coalition
+  could correlate is metadata: the network origin and requested
+  submission time each relay sees. A coalition of relay operators
+  pooling arrival logs with $t$ key-share holders could group a voter's
+  shares by that metadata and decrypt them, recovering the balance the
+  decomposition into shares exists to hide.
+
+Held by the same organisation, each pair acts with no collusion
+required. Separating the roles does not add an assumption. It restores
+one that bundling had quietly removed, by making a coalition necessary
+where previously a single operator sufficed. It also makes the
+assumption checkable: with the operator of each role published, anyone
+can verify that the three sets are disjoint, which is not possible when
+one binary performs all three.
 
 ## Other Design Choices
 
@@ -686,24 +889,24 @@ for governance with ZKP-optimized state transitions (Poseidon hashing, custom
 transaction types). Zcash mainnet's transaction throughput and scripting model
 are not designed for interactive multi-phase voting protocols.
 
-**Orchard-only snapshots**: the voting protocol is built on Orchard's
-circuit-friendly primitives (Poseidon hashing, Pallas curve). Sapling
-and transparent pools use incompatible cryptographic constructions.
+**Ironwood-only snapshots**: the voting protocol is built on the
+circuit-friendly primitives of the Orchard protocol (Poseidon hashing,
+Pallas curve), which the Ironwood pool uses. Sapling and transparent
+pools use incompatible cryptographic constructions.
 The corresponding requirement on coinholders is stated in
 [Eligibility].
 
 **Cosmos SDK**: provides a mature BFT consensus engine (CometBFT),
-validator lifecycle management (bonding, jailing for missed blocks or
-missed ceremony acknowledgements, consensus power distribution), and a
+validator lifecycle management (bonding, jailing for missed blocks,
+consensus power distribution), and a
 transaction pipeline that can be extended with custom message types and
 ante handlers for ZKP verification. The alternative — building a chain
 from scratch — would duplicate well-tested consensus infrastructure.
 
 **Funding equals voting power**: bonding serves three purposes: it
-determines which validators participate in consensus and the EA key
-ceremony (and thus can decrypt the tally), it enables jailing of
-inactive validators who miss blocks or ceremony acknowledgements, and
-an even funding split gives each validator a roughly equal probability
+determines which validators participate in consensus, it enables
+jailing of inactive validators who miss blocks, and an even funding
+split gives each validator a roughly equal probability
 of becoming the block proposer — not important for correctness, but
 important for liveness.
 
@@ -730,21 +933,25 @@ to a reader of this document.
 | Parameter | Why it is published |
 |---|---|
 | The organisation operating each validator | Establishes the validator set for the round. |
-| The organisation operating each submission server | Allows the role separation required in [Validator] to be checked. |
-| The organisation holding each election authority key share | As above. |
+| The organisation operating each relay | Allows the role separation required in [Role Separation] to be checked. |
+| The organisation holding each election authority key share, and its registered Pallas public key | As above; see [Onboarding Key-Share Holders]. |
+| Each key-share holder's ceremony participation record, and any removal from the holder set | Makes persistent non-participation visible; see [Key-Share Holder]. |
 | Stake distribution across validators | Determines the coalition size required to exclude transactions; see the "Transaction Inclusion" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
 | Software versions for the chain, circuits and client library | Required to reproduce or audit a round. |
 
-The three operator sets MUST be disjoint. Round-level parameters — the
-decryption threshold, administrator keys and threshold, confirmation
-depth, and key custody — are published with the rules they parameterise,
-in the "Deployment" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+The three operator sets MUST be disjoint (see [Role Separation]).
+Round-level parameters — the decryption threshold and holder count, the
+ceremony timeouts, the reveal window length, administrator keys and
+threshold, confirmation depth, and the key-share retention period — are
+published with the rules they parameterise, in the "Deployment" section
+of `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 
 # Reference implementation
 
 - [^ref-vote-sdk] — Cosmos SDK vote chain (`svoted`) implementing
-  the chain-side state, ceremony, tally, and submission server.
+  the chain-side state, ceremony, tally, and the submission server
+  that the protocol replaces with relays.
 - [^ref-nullifier-pir] — PIR server and client for privately
   retrieving nullifier non-membership proofs.
 
@@ -763,7 +970,7 @@ in the "Deployment" section of `draft-valargroup-shielded-voting` [^draft-voting
   servers from independent implementations can interoperate.
 - **Implementation diversity**: a result is described as coinholder
   sentiment, but where one client is the only practical way to vote, its
-  defaults — how it splits shares, which servers it uses, when it
+  defaults — how it splits shares, which relays it uses, when it
   submits — are the protocol as every voter experiences it. The
   conditions under which a result may be described as representative are
   not specified. Requiring that some number of independent
@@ -772,6 +979,16 @@ in the "Deployment" section of `draft-valargroup-shielded-voting` [^draft-voting
   form would bound the share of ballots, or of voting weight, cast
   through any one implementation, and would bind the deployment that
   publishes the result.
+- **Relay service interface**: the interface by which a client hands a
+  share reveal message and its requested submission time to a relay
+  (see [Relay Operator]) is not specified in any ZIP. The protocol
+  draft places it with this document and constrains it — no client
+  authentication, no identifier that persists across submissions, the
+  message submitted unaltered — but does not define it. A normative
+  form is needed before clients and relays from independent
+  implementations can interoperate.
+
+
 # References
 
 [^BCP14]: [Information on BCP 14 — "RFC 2119: Key words for use in RFCs to Indicate Requirement Levels" and "RFC 8174: Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"](https://www.rfc-editor.org/info/bcp14)
