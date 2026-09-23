@@ -28,14 +28,24 @@ Administrator
 Vote round
 
 : A time-bounded voting session defining a set of proposals, a Zcash
-  snapshot height, and a deadline. Wallet clients interact with exactly
-  one vote round at a time.
+  snapshot height, a voting deadline and a reveal deadline. Wallet
+  clients interact with exactly one vote round at a time. The round
+  states and their transitions are specified in the "Round Lifecycle"
+  section of [^voting-protocol].
 
 Delegation
 
-: The act of proving ownership of unspent Orchard notes at the snapshot
-  height and registering a vote authority note on the vote commitment
-  tree. See [^orchard-balance-proof].
+: The act of proving ownership of unspent Orchard notes in the Ironwood
+  pool at the snapshot height and registering a vote authority note on
+  the vote commitment tree. See [^orchard-balance-proof].
+
+Ironwood pool
+
+: The Zcash shielded pool over which votes are weighted. The Ironwood
+  pool uses the Orchard protocol; references in this document to
+  Orchard keys, notes, nullifiers, signatures or circuits refer to
+  those constructions as used in the Ironwood pool. See
+  [^voting-protocol].
 
 Vote authority note (VAN)
 
@@ -49,11 +59,35 @@ Vote commitment tree
   commitments. The tree root at a given block height serves as a public
   input to zero-knowledge proof verification.
 
+Relay
+
+: An untrusted store-and-forward service to which a wallet MAY hand a
+  finished share reveal message for submission to the vote chain at a
+  requested time. A relay constructs no proofs and receives no witness
+  material. See [Share Submission] and the "Share Submission" section
+  of [^voting-protocol].
+
+Reveal window
+
+: The period, following the voting window, during which the vote chain
+  accepts share reveal transactions for a round. It ends at the round's
+  `reveal_end_time`. See the "Round Lifecycle" section of
+  [^voting-protocol].
+
 Share
 
-: A fragment of the holder's delegated vote weight, encrypted and
-  submitted to helper servers rather than directly to the chain to
-  prevent timing-based linkability.
+: One of the $N_s$ encrypted fragments of the holder's ballot count
+  within a vote commitment. Each share is revealed independently
+  during the reveal window by a share reveal message that the wallet
+  constructs itself.
+
+Share reveal message
+
+: The message a share reveal transaction carries: a Vote Reveal Proof,
+  a share nullifier, the option-vector ciphertexts, the proposal
+  identifier, the final VCT root and the round identifier. Specified in
+  the "Share Reveal Message" section of [^voting-protocol]; its JSON
+  encoding is given in [Share Reveal Message Format].
 
 # Abstract
 
@@ -61,16 +95,17 @@ This ZIP specifies the REST API endpoints, wire formats, and discovery
 mechanism that wallet clients use to participate in shielded on-chain
 voting rounds. It covers vote round discovery via a per-vote
 configuration document, data query endpoints for reading chain state,
-transaction submission endpoints for delegation and vote casting, and
-the encoding conventions for all exchanged data.
+transaction submission endpoints for delegation, vote casting and share
+reveal, the payload a wallet hands to a relay, and the encoding
+conventions for all exchanged data.
 
 # Motivation
 
 The shielded voting protocol involves multiple ZIPs that specify the
-cryptographic circuits [^voting-protocol], proof-of-balance
-[^orchard-balance-proof], share
-submission [^voting-protocol], and election authority key ceremony
-[^voting-setup]. A wallet integrator currently must read several of these
+cryptographic circuits, share submission and election authority key
+ceremony [^voting-protocol], proof-of-balance [^orchard-balance-proof],
+and the operational setup of a deployment [^voting-setup]. A wallet
+integrator currently must read several of these
 specifications to understand which endpoints to call, what wire formats
 to use, and how to discover an active vote.
 
@@ -89,10 +124,13 @@ configuration document.
 - A wallet can submit delegation and vote commitment transactions
 using the wire formats in this specification. Proof construction is
 specified in companion ZIPs.
-- A wallet can submit share reveal transactions directly, without
-disclosing to any third party which shares belong to the same vote.
-Submission via a helper server is available for wallets that cannot
-construct proofs locally.
+- A wallet can submit share reveal transactions directly, or hand
+finished share reveal messages to relays, without disclosing to any
+third party which shares belong to the same vote or which option the
+vote supports.
+- A wallet retains, from the moment it casts a vote until every share
+of that vote is revealed, the material the Vote Reveal Proofs need,
+and that material never leaves the device.
 - A wallet can authenticate a configuration document, not merely check
 that it is well formed.
 - A voter can delegate part of their balance rather than all of it.
@@ -105,11 +143,14 @@ component has no impact on other components or the configuration schema.
 
 # Non-requirements
 
-- Validator onboarding, key registration, and EA key ceremony.
+- Key-share holder onboarding, key registration, and the EA key
+ceremony (distributed key generation), specified in [^voting-protocol]
+and [^voting-setup].
 - Chain consensus rules and block production.
 - Round creation and governance authority operations.
-- The internal implementation of helper servers (specified in
-[^voting-protocol]).
+- The internal implementation of relays. A relay's obligations are
+specified in [^voting-protocol]; this document specifies only the
+payload a wallet hands to one.
 
 # High level summary
 
@@ -130,7 +171,8 @@ independently versioned protocol components:
   affecting the other components.
 - **`tally`** — threshold decryption and result aggregation.
 - **`pir`** — the nullifier PIR retrieval scheme.
-- **`vote_server`** — the helper server API that vote shares are submitted to.
+- **`vote_server`** — the vote server REST API through which a wallet
+  reads chain state and submits transactions.
 
 See [Version Handling] for the normative rules.
 
@@ -147,7 +189,8 @@ See [Version Handling] for the normative rules.
    any check fails.
 
 3. **Fetch active round from chain.** Query `GET /shielded-vote/v1/rounds/active`
-   to confirm the round is ACTIVE and retrieve on-chain parameters.
+   to confirm the round is ACTIVE (or, for a wallet returning to
+   reveal, REVEALING) and retrieve on-chain parameters.
    See [Active Round].
 
 4. **Bind the round to the configuration.** Confirm that the chain's
@@ -179,38 +222,72 @@ See [Version Handling] for the normative rules.
    tree. Identify the wallet's vote authority note by its commitment
    `van_cmx` computed during step 6.
 
-## Voting (repeat for each proposal)
+## Voting (during ACTIVE; repeat for each proposal)
 
 9. **Construct and submit vote commitment.** Build the ZKP2 proof
    (consuming the current VAN and producing a new VAN) and submit
    via `POST /shielded-vote/v1/cast-vote`. The tree root at the
-   anchor height is a public input to this proof.
-   See [Vote Commitment Transaction] and [^voting-protocol].
+   anchor height is a public input to this proof. The vote decision
+   is a private input to this proof and never appears in any request
+   body. See [Vote Commitment Transaction] and [^voting-protocol].
 
-10. **Poll for vote commitment confirmation.** Poll
+10. **Persist the reveal material.** Store, encrypted at rest, the
+    vote commitment and everything the Vote Reveal Proofs will need
+    to open it during the reveal window. See
+    [Reveal Material Persistence].
+
+11. **Poll for vote commitment confirmation.** Poll
     `GET /shielded-vote/v1/tx/{hash}` until confirmed.
 
-11. **Sync commitment tree.** Query [Commitment Tree Leaves] again
+12. **Sync commitment tree.** Query [Commitment Tree Leaves] again
     to locate the new VAN (needed as input for the next proposal)
-    and the vote commitment leaf (needed for share construction).
+    and the vote commitment leaf, recording its leaf position.
 
-12. **Construct and submit shares.** Build 16 encrypted share
-    payloads and submit each to a helper server via
-    `POST /shielded-vote/v1/shares`. Each share references the
-    `tree_position` of the vote commitment leaf from step 11.
-    See [Share Submission] and [^voting-protocol].
-
-13. **Poll share statuses.** For each submitted share, poll
-    `GET /shielded-vote/v1/share-status/{roundId}/{nullifier}` until
-    all return `"confirmed"`. See [Share Status].
-
-Steps 9 through 13 are repeated sequentially for each proposal in
+Steps 9 through 12 are repeated sequentially for each proposal in
 the round. Each iteration consumes the current VAN and produces a
-new one, so proposals cannot be voted on in parallel.
+new one, so proposals cannot be voted on in parallel. Voting ends
+at `vote_end_time`.
+
+## Share Reveal (during REVEALING)
+
+The reveal window opens at `vote_end_time` and closes at
+`reveal_end_time`. Share reveal messages cannot be constructed before
+it opens, because they are anchored to the round's final VCT root,
+which exists only once voting has closed. A wallet that is not opened
+at least once during the reveal window cannot reveal its shares, and
+the vote is not counted. [Submission Timing] requires wallets to
+surface this to the user.
+
+13. **Obtain the final VCT root and Merkle path.** Query
+    [Commitment Tree (Latest)] once the round is REVEALING, sync any
+    remaining leaves via [Commitment Tree Leaves], and compute the
+    Merkle path for each of the wallet's vote commitments against the
+    final root.
+
+14. **Construct the share reveal messages.** For each vote, construct
+    $N_s$ Vote Reveal Proofs locally from the persisted reveal
+    material and assemble $N_s$ share reveal messages. No party other
+    than the wallet constructs these proofs. See [Share Submission]
+    and [^voting-protocol].
+
+15. **Draw the submission schedule.** Draw $N_s$ submission times
+    within the reveal window as specified in [Submission Timing].
+
+16. **Submit.** Either submit each message directly via
+    `POST /shielded-vote/v1/reveal-share` at its scheduled time, or
+    hand each finished message, with its scheduled time as
+    `submit_at`, to a distinct relay via `POST /shielded-vote/v1/shares`.
+    Each submission or hand-off uses its own network path. See
+    [Share Submission] and [Network Isolation].
+
+17. **Optionally confirm inclusion.** A wallet MAY check
+    `GET /shielded-vote/v1/share-status/{roundId}/{nullifier}`, subject
+    to the privacy caveats in [Share Status]. This is not a required
+    step.
 
 ## Results (optional)
 
-14. **View tally results.** After the round reaches FINALIZED status,
+18. **View tally results.** After the round reaches FINALIZED status,
     query `GET /shielded-vote/v1/tally-results/{round_id}` for
     decrypted per-proposal tallies. See [Tally Results].
 
@@ -226,10 +303,14 @@ participate in the round.
 
 ```json
 {
-  "config_version": 2,
+  "config_version": 3,
   "vote_round_id": "<hex, 64 characters>",
   "vote_servers": [
     {"url": "https://vote1.example.com", "label": "validator-1"}
+  ],
+  "relays": [
+    {"url": "https://relay1.example.com", "label": "relay-1"},
+    {"url": "https://relay2.example.com", "label": "relay-2"}
   ],
   "pir_endpoints": [
     {"url": "https://pir1.example.com", "label": "pir-1"}
@@ -241,6 +322,7 @@ participate in the round.
   "nullifier_imt_root": "<base64, 32 bytes>",
   "ea_pk": "<base64, 32 bytes>",
   "vote_end_time": 1735689600,
+  "reveal_end_time": 1736294400,
   "proposals": [
     {
       "id": 1,
@@ -269,17 +351,19 @@ participate in the round.
 
 | Field                              | Type             | Description                                                                                                                    |
 | ---------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `config_version`                   | integer          | Schema version of this configuration document. This specification defines version 2.                                           |
+| `config_version`                   | integer          | Schema version of this configuration document. This specification defines version 3.                                           |
 | `vote_round_id`                    | string           | Hex-encoded 32-byte vote round identifier (64 characters, lowercase).                                                          |
-| `vote_servers`                     | array            | One or more vote server base URLs serving both chain and helper endpoints. Each entry has `url` (string) and `label` (string). |
+| `vote_servers`                     | array            | One or more vote server base URLs serving the chain query and transaction submission endpoints. Each entry has `url` (string) and `label` (string). |
+| `relays`                           | array            | Zero or more relay base URLs serving the [Relay Hand-off] endpoint. Each entry has `url` (string) and `label` (string). See [Share Submission]. |
 | `pir_endpoints`                    | array            | One or more nullifier PIR server base URLs. Each entry has `url` and `label`.                                                  |
-| `snapshot_height`                  | integer          | Zcash block height at which the Orchard pool snapshot was taken.                                                               |
+| `snapshot_height`                  | integer          | Zcash block height at which the Ironwood pool snapshot was taken.                                                              |
 | `snapshot_blockhash`               | string           | Base64-encoded 32-byte hash of the Zcash block at `snapshot_height`.                                                           |
 | `min_confirmations`                | integer          | Confirmation depth used when choosing the snapshot block.                                                                      |
-| `nc_root`                          | string           | Base64-encoded 32-byte Orchard note commitment tree root at the snapshot.                                                      |
+| `nc_root`                          | string           | Base64-encoded 32-byte Ironwood pool note commitment tree root at the snapshot.                                                |
 | `nullifier_imt_root`               | string           | Base64-encoded 32-byte nullifier non-membership tree root at the snapshot.                                                     |
 | `ea_pk`                            | string           | Base64-encoded 32-byte election authority public key (compressed Pallas point).                                                |
-| `vote_end_time`                    | integer          | Unix timestamp (seconds) after which votes are no longer accepted.                                                             |
+| `vote_end_time`                    | integer          | Unix timestamp (seconds) after which votes are no longer accepted; the round enters REVEALING.                                 |
+| `reveal_end_time`                  | integer          | Unix timestamp (seconds) after which share reveals are no longer accepted; the round enters TALLYING.                          |
 | `proposals`                        | array            | Ordered list of proposals. Each has `id` (integer, 1-indexed), `title` (string), `description` (string), and `options` (array of `{index, label}`). |
 | `supported_versions.pir`           | array of strings | PIR retrieval scheme versions supported by the servers (e.g., `["v0", "v1"]`).                                                 |
 | `supported_versions.vote_protocol` | string           | Vote protocol version covering the ZKP circuits and commitment tree structure (e.g., `"v0"`).                                  |
@@ -302,14 +386,22 @@ below as a substitute for it.
 A wallet MUST validate the structure of the configuration before use:
 
 - `config_version` MUST be a version the wallet recognizes. This
-specification defines version 2. A version 1 document carries no
-attestation: a wallet MUST NOT accept one for a round created after
-this specification takes effect, and a wallet that accepts one for an
-earlier round MUST treat that round's snapshot as unattested.
+specification defines version 3. A version 1 document carries no
+attestation, and a version 2 document carries no `reveal_end_time` and
+is attested under an earlier domain separator: a wallet MUST NOT
+accept either for a round created after this specification takes
+effect. A wallet that accepts a version 1 document for an earlier
+round MUST treat that round's snapshot as unattested.
 - `vote_round_id` MUST be exactly 64 lowercase hexadecimal characters.
 - `vote_servers` MUST contain at least one entry.
+- `relays`, if present, MUST be an array; each entry MUST have a
+string `url` and a string `label`. It MAY be empty. A wallet MUST
+treat an absent `relays` field as an empty array.
 - `pir_endpoints` MUST contain at least one entry.
 - `snapshot_height` MUST be greater than 0.
+- `reveal_end_time` MUST be greater than `vote_end_time`. The minimum
+separation the chain enforces is specified in the "Round Lifecycle"
+section of [^voting-protocol].
 - `snapshot_blockhash`, `nc_root`, `nullifier_imt_root` and `ea_pk` MUST
 each be the base64 encoding of exactly 32 bytes.
 - Each `signatures` entry MUST have a string `key_id`, a string `alg`,
@@ -339,11 +431,16 @@ For each entry in the configuration's `signatures`, a wallet:
 2. MUST verify that the entry's `alg` matches the `alg` of the resolved
    key. If they differ, the signature MUST be treated as invalid.
 3. MUST verify `sig` over the bytes defined in the "Round Attestation"
-   section of `draft-valargroup-shielded-voting-setup` [^voting-setup],
+   section of `draft-valargroup-shielded-voting` [^voting-protocol],
    taking each field from the configuration (`vote_round_id` decoded
-   from hex, the base64 fields decoded to bytes) and `proposals_hash` as
-   computed from the configuration's `proposals` per [Proposals Hash].
-   This specification defines one algorithm, `"ed25519"`, verified per
+   from hex, the base64 fields decoded to bytes, `snapshot_height`,
+   `vote_end_time`, `reveal_end_time` and `min_confirmations` as
+   big-endian unsigned integers of the widths given there) and
+   `proposals_hash` as computed from the configuration's `proposals`
+   per [Proposals Hash]. The version in the attestation's domain
+   separator is the document's `config_version`; a version 3 document
+   is verified under `ZcashVotingRoundAttestation:v3`. This
+   specification defines one algorithm, `"ed25519"`, verified per
    RFC 8032 [^rfc8032].
 4. MUST count at most one valid signature per distinct `key_id`.
 
@@ -362,10 +459,11 @@ takes part in only if the wallet checks that the two agree.
 Before delegating, voting, or submitting any share in a round, a wallet
 MUST confirm that the `VoteRound` it retrieved carries the same
 `vote_round_id`, `snapshot_height`, `snapshot_blockhash`, `nc_root`,
-`nullifier_imt_root`, `vote_end_time` and `ea_pk` as the authenticated
-configuration, and that its `proposals_hash` equals the hash of the
-configuration's `proposals` computed per [Proposals Hash]. A wallet MUST
-NOT take part in a round that fails this check.
+`nullifier_imt_root`, `vote_end_time`, `reveal_end_time` and `ea_pk` as
+the authenticated configuration, and that its `proposals_hash` equals
+the hash of the configuration's `proposals` computed per
+[Proposals Hash]. A wallet MUST NOT take part in a round that fails
+this check.
 
 Without this check a vote server can supply snapshot roots other than
 those the administrators attested to, or an `ea_pk` of its own, to which
@@ -409,10 +507,11 @@ Returns the active voting round, if any.
 | `snapshot_height`    | uint64            | Zcash snapshot block height.                                         |
 | `snapshot_blockhash` | base64 (32 bytes) | Zcash block hash at snapshot.                                        |
 | `proposals_hash`     | base64 (32 bytes) | SHA-256 hash of the proposals array (see [Proposals Hash]).          |
-| `vote_end_time`      | uint64            | Unix timestamp (seconds).                                            |
+| `vote_end_time`      | uint64            | Unix timestamp (seconds) at which voting closes and the reveal window opens. |
+| `reveal_end_time`    | uint64            | Unix timestamp (seconds) at which the reveal window closes.          |
 | `nullifier_imt_root` | base64 (32 bytes) | Nullifier non-membership tree root.                                  |
-| `nc_root`            | base64 (32 bytes) | Orchard note commitment tree root.                                   |
-| `status`             | uint32            | Session status enum (4=PENDING, 1=ACTIVE, 2=TALLYING, 3=FINALIZED).  |
+| `nc_root`            | base64 (32 bytes) | Ironwood pool note commitment tree root.                             |
+| `status`             | uint32            | Session status enum (4=PENDING, 1=ACTIVE, 5=REVEALING, 2=TALLYING, 3=FINALIZED); see the "Round Lifecycle" section of [^voting-protocol]. |
 | `ea_pk`              | base64 (32 bytes) | Election authority public key (compressed Pallas point).             |
 | `proposals`          | array             | Proposals with `id` (uint32), `title`, `description`, and `options`. |
 | `description`        | string            | Human-readable round description.                                    |
@@ -422,11 +521,13 @@ Returns the active voting round, if any.
 
 
 The response may contain additional fields related to the EA key
-ceremony and threshold decryption (e.g., ceremony status, validator
-keys, ECIES payloads). These fields exist for validator coordination
-and have no bearing on wallet operations, so they are not documented
-here. See `draft-valargroup-shielded-voting-setup` [^voting-setup] for
-details.
+ceremony and threshold decryption (e.g., ceremony status, key-share
+holder commitments, encrypted dealings). These fields exist for
+key-share holder coordination during distributed key generation and
+have no bearing on wallet operations, so they are not documented here.
+See the "Election Authority Key Ceremony" section of
+[^voting-protocol] and `draft-valargroup-shielded-voting-setup`
+[^voting-setup] for details.
 
 The `proposals` field in the VoteRound response contains the same
 proposals as the vote configuration document. The `proposals_hash`
@@ -575,7 +676,7 @@ available after the round reaches FINALIZED status.
 | --------------- | ----------------- | ------------------------------------ |
 | `vote_round_id` | base64 (32 bytes) | Round identifier.                    |
 | `proposal_id`   | uint32            | Proposal identifier.                 |
-| `vote_decision` | uint32            | Vote option index.                   |
+| `vote_decision` | uint32            | Option position whose aggregate this entry reports. It is a property of the aggregate, not of any voter. |
 | `total_value`   | uint64            | Decrypted aggregate value (zatoshi). |
 
 
@@ -608,13 +709,13 @@ The delegation transaction registers a holder's vote weight on the vote
 commitment tree. It corresponds to ZKP1 (the delegation circuit) as
 specified in [^orchard-balance-proof] and [^voting-protocol].
 
-### Endpoint
+### Delegation Endpoint
 
 ```
 POST /shielded-vote/v1/delegate-vote
 ```
 
-### Request Body
+### Delegation Request Body
 
 A JSON object with the following fields:
 
@@ -640,7 +741,7 @@ The chain verifies the `spend_auth_sig` against this client-provided
 sighash; it does not recompute it. See [^orchard-balance-proof] for the
 PCZT construction and signing flow that produces the sighash.
 
-### Response
+### Delegation Response
 
 All transaction submission endpoints return the same response format:
 
@@ -666,13 +767,13 @@ The vote commitment transaction casts a vote on a specific proposal. It
 corresponds to ZKP2 (the vote commitment circuit) as specified in
 [^voting-protocol].
 
-### Endpoint
+### Vote Commitment Endpoint
 
 ```
 POST /shielded-vote/v1/cast-vote
 ```
 
-### Request Body
+### Vote Commitment Request Body
 
 A JSON object with the following fields:
 
@@ -690,71 +791,147 @@ A JSON object with the following fields:
 | `r_vpk`                        | base64 (32 bytes) | Randomized voting public key (compressed Pallas point).       |
 
 
-### Response
+### Vote Commitment Response
 
-Same response format as [Delegation Transaction].
+Same response format as [Delegation Response].
 
 ## Share Submission
 
-After casting a vote commitment, the wallet submits each encrypted
-share. Two paths exist, and they have materially different privacy
-properties.
+Share reveal takes place during the reveal window, after the round has
+entered REVEALING and its VCT has been frozen. The wallet constructs
+every Vote Reveal Proof itself, from material it retained when it cast
+the vote; no other party constructs one. The rules governing
+construction, independence of submissions, relay selection and retry
+are specified in the "Share Submission" section of [^voting-protocol].
+This section specifies what the wallet keeps, the message it produces,
+and the two transports by which the message reaches the vote chain.
 
-**Direct submission is the default.** A wallet that can construct Vote
-Reveal Proofs MUST submit share reveal transactions itself, using the
-chain transaction endpoints, and MUST NOT send share payloads to a
-helper server. Proof construction is approximately 38 ms per share, so
-a complete vote is under a second of work. On this path no third party
-learns which shares belong to the same vote.
+**Direct submission.** The wallet submits each share reveal message
+itself, at its scheduled time, via [Direct Share Reveal]. This requires
+the wallet to be online at each scheduled time.
 
-**Helper submission is a fallback** for wallets that cannot construct
-proofs locally. The payload a helper receives carries values common to
-all of a vote's shares, so any helper receiving two of them can group
-them. A wallet using this path MUST disclose to the user, before the
-vote is cast, that the helpers it selects will learn which shares
-belong to the same vote and which option that vote supports. See
-[^voting-protocol] for the payload contents and their consequences.
+**Relayed submission.** A wallet that will not be online for the
+duration of its schedule MAY hand each finished message, together with
+its scheduled time, to a relay via [Relay Hand-off]. The relay holds
+exactly what the chain will hold and learns from the payload nothing a
+chain observer would not.
 
-A wallet MUST NOT present randomized submission delays or per-share
-network isolation to the user as mitigating this, because they do not:
-the correlating values travel in the payload regardless.
+On either path the wallet MUST NOT send any auxiliary input of the Vote
+Reveal Proof — the vote commitment, its VCT position or path, the
+shares hash, the share commitments, the blind factors, the vote
+decision, or a committed ciphertext by itself — to any party.
 
-The following endpoints are served from the same `vote_servers` base
-URLs as the chain query endpoints, and apply to the helper path.
+### Reveal Material Persistence
 
-### Submit Share
+Because the final VCT root does not exist until voting closes, a wallet
+cannot construct its Vote Reveal Proofs in the session in which it
+votes. From the moment it constructs a vote commitment until every
+share of that vote has been confirmed on the vote chain, a wallet MUST
+persist, for that vote:
+
+- the vote commitment and, once known, its VCT leaf position;
+- `shares_hash` and all $N_s$ blinded share commitments;
+- for each share $i$: the plaintext value $v_i$, the El Gamal
+  randomness $r_i$, the blind factor $\mathsf{blind}_i$, and the
+  committed ciphertext $(C_{1,i}, C_{2,i})$;
+- the proposal identifier and the vote decision.
+
+These values are defined in the "Vote Share" and "Vote Reveal Proof"
+sections of [^voting-protocol]. This material MUST be stored encrypted
+at rest and MUST NOT leave the device, in a backup or otherwise; in
+particular it MUST NOT be sent to a vote server, relay or PIR
+endpoint. A wallet that loses
+this material cannot reveal the vote, and the vote is not counted. A
+wallet SHOULD zeroize the material once every share of the vote is
+confirmed or the reveal window has closed.
+
+### Share Reveal Message Format
+
+The JSON encoding of a share reveal message, as defined in the "Share
+Reveal Message" section of [^voting-protocol], is an object with the
+following fields:
+
+| Field                | Type                       | Description                                                          |
+| -------------------- | -------------------------- | -------------------------------------------------------------------- |
+| `proof`              | base64 (variable)          | Halo 2 Vote Reveal Proof.                                            |
+| `share_nullifier`    | base64 (32 bytes)          | Share nullifier (see [Share Nullifier]).                             |
+| `option_ciphertexts` | array of 8 objects         | Option-vector ciphertexts $E_0 \ldots E_{N_{\mathsf{opt}}-1}$, one per option position, each `{"c1", "c2"}`. |
+| `proposal_id`        | uint32                     | Proposal identifier (1 to 15).                                       |
+| `vct_root`           | base64 (32 bytes)          | The round's final VCT root.                                          |
+| `vote_round_id`      | base64 (32 bytes)          | Vote round identifier.                                               |
+
+Each `option_ciphertexts` entry contains:
+
+| Field | Type              | Description                                                  |
+| ----- | ----------------- | ------------------------------------------------------------ |
+| `c1`  | base64 (32 bytes) | El Gamal ciphertext component `C1` (compressed Pallas point). |
+| `c2`  | base64 (32 bytes) | El Gamal ciphertext component `C2` (compressed Pallas point). |
+
+The array has exactly $N_{\mathsf{opt}} = 8$ entries, in option
+position order, regardless of how many options the proposal has. A
+share reveal message carries no signature, no submitter identity, no
+share index, and no indication of which position holds the committed
+ciphertext.
+
+### Direct Share Reveal
+
+```
+POST /shielded-vote/v1/reveal-share
+```
+
+Submits one share reveal message directly to the vote chain. Served
+from a `vote_servers` base URL.
+
+**Request body:** a [Share Reveal Message Format] object.
+
+**Response:** the same response format as [Delegation Response].
+
+A wallet submitting directly MUST submit each message at its scheduled
+time (see [Submission Timing]) and over its own network path (see
+[Network Isolation]).
+
+### Relay Hand-off
 
 ```
 POST /shielded-vote/v1/shares
 ```
 
-Submits a single encrypted vote share to a helper server.
+Hands one finished share reveal message to a relay for submission at a
+requested time. Served from a `relays` base URL, not from a vote
+server.
 
 **Request body:** A JSON object with the following fields:
 
+| Field       | Type   | Description                                                                                                        |
+| ----------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| `message`   | object | A [Share Reveal Message Format] object, complete and unaltered.                                                    |
+| `submit_at` | uint64 | Unix timestamp (seconds) at which the relay is to submit the message. 0 means as soon as possible.                 |
 
-| Field           | Type                            | Description                                                                                                                                            |
-| --------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `shares_hash`   | base64 (32 bytes)               | Poseidon hash committing to all shares in this vote.                                                                                                   |
-| `proposal_id`   | uint32                          | Proposal identifier (1-indexed).                                                                                                                       |
-| `vote_decision` | uint32                          | Vote option index (0-indexed).                                                                                                                         |
-| `enc_share`     | object                          | Encrypted share (see below).                                                                                                                           |
-| `tree_position` | uint64                          | Vote commitment tree leaf index.                                                                                                                       |
-| `vote_round_id` | string (hex, 64 chars)          | Hex-encoded vote round identifier.                                                                                                                     |
-| `share_comms`   | array of base64 (32 bytes each) | 16 per-share Poseidon commitments.                                                                                                                     |
-| `primary_blind` | base64 (32 bytes)               | Blinding factor for the revealed share.                                                                                                                |
-| `submit_at`     | uint64                          | Unix timestamp (seconds) at which the helper should submit this share to the chain. 0 means submit at the last possible moment before `vote_end_time`. |
+The payload MUST NOT contain anything else. In particular it MUST NOT
+contain the vote commitment, its VCT position, the shares hash, the
+share commitments, any blind factor, the vote decision, the share
+index, or the committed ciphertext other than at its position within
+`message.option_ciphertexts`. The material listed in
+[Reveal Material Persistence] never reaches a relay.
 
+A wallet using relays:
 
-The `enc_share` object contains:
+- MUST hand at most one message of a vote to any relay, including on
+  retry;
+- MUST choose the relay for each message independently and uniformly
+  at random from the configuration's `relays`, excluding relays that
+  have already received a message of the same vote;
+- MUST hand each message over on a separate network connection that
+  shares no identifying state with any other hand-off of the same vote,
+  for example a fresh Tor circuit or mixnet channel per message (see
+  [Network Isolation]);
+- MUST NOT hand messages over in share-index order, and SHOULD hand
+  them over at independently drawn times rather than in one burst;
+- MUST set `submit_at` to the time drawn for that message per
+  [Submission Timing].
 
-
-| Field         | Type              | Description                                                  |
-| ------------- | ----------------- | ------------------------------------------------------------ |
-| `c1`          | base64 (32 bytes) | ElGamal ciphertext component `C1` (compressed Pallas point). |
-| `c2`          | base64 (32 bytes) | ElGamal ciphertext component `C2` (compressed Pallas point). |
-| `share_index` | uint32            | Share index (0 to 15).                                       |
-
+Where fewer distinct relays remain than messages, the wallet MUST
+submit the remaining messages directly via [Direct Share Reveal].
 
 **Response body:**
 
@@ -762,17 +939,19 @@ The `enc_share` object contains:
 {"status": "queued"}
 ```
 
-
 | Field    | Type   | Description                                                |
 | -------- | ------ | ---------------------------------------------------------- |
 | `status` | string | `"queued"` if accepted, `"duplicate"` if already received. |
 | `error`  | string | Error description (present only on failure).               |
 
+A relay's own obligations (accepting a payload without authenticating
+the wallet, requiring no persistent identifier, submitting the message
+unaltered) are specified in [^voting-protocol], not here.
 
 ### Share Nullifier
 
-Each submitted share has a deterministic nullifier derived from the
-vote commitment fields and the share's blinding factor. The wallet
+Each share has a deterministic nullifier derived from the vote
+commitment, the share index and the share's blind factor. The wallet
 computes this nullifier locally and hex-encodes it (lowercase, 64
 characters) for use in the [Share Status] endpoint path. The
 derivation is specified in [^voting-protocol].
@@ -783,7 +962,7 @@ derivation is specified in [^voting-protocol].
 GET /shielded-vote/v1/share-status/{roundId}/{nullifier}
 ```
 
-Polls whether a submitted share has been included on-chain.
+Reports whether a share nullifier has been recorded on the vote chain.
 
 **Path parameters:**
 
@@ -797,11 +976,24 @@ Polls whether a submitted share has been included on-chain.
 {"status": "pending"}
 ```
 
-
 | Field    | Type   | Description                                                                                       |
 | -------- | ------ | ------------------------------------------------------------------------------------------------- |
 | `status` | string | `"pending"` if not yet on-chain, `"confirmed"` if the share nullifier has been recorded on-chain. |
 
+Querying a vote server (or a relay) for one's own share nullifiers
+reveals to it which nullifiers are one's own; this is recorded as an
+open issue in [^voting-protocol]. A wallet SHOULD therefore make status
+polling optional and off by default. A wallet that does poll SHOULD
+issue each query over a fresh network path (see [Network Isolation]),
+SHOULD query at most one nullifier per path, and SHOULD do so at times
+unrelated to the vote's submission schedule. A wallet MUST NOT require
+a confirmed status before proceeding with any other step.
+
+A wallet that observes, by whatever means, that a message has not been
+included within a wallet-configured timeout MAY resubmit it under the
+retry rules of [^voting-protocol]: directly, or to a relay that has
+received no message of the same vote. A duplicate that reaches the
+chain is rejected by its nullifier and is harmless.
 
 ## Vote Commitment Tree
 
@@ -845,16 +1037,17 @@ property rather than an implementation preference.
 
 ### Network Isolation
 
-A wallet MUST route each share submission over a network path that is
-not shared with any other share of the same vote — for example, a fresh
-Tor circuit per share. This MUST be the default behaviour, not an
-opt-in setting.
+A wallet MUST route each share reveal message — whether submitted
+directly or handed to a relay — over a network path that is not shared
+with any other message of the same vote — for example, a fresh Tor
+circuit or mixnet channel per message. This MUST be the default
+behaviour, not an opt-in setting.
 
 A wallet MUST use the same protection for the requests that precede
-voting, in particular commitment tree synchronisation and PIR queries,
-and MUST NOT make any request to a vote server, helper, or PIR endpoint
-over a path that has carried the wallet's ordinary Zcash light client
-traffic for the same user.
+voting and reveal, in particular commitment tree synchronisation and
+PIR queries, and MUST NOT make any request to a vote server, relay, or
+PIR endpoint over a path that has carried the wallet's ordinary Zcash
+light client traffic for the same user.
 
 The reason for the second requirement is compositional. The voting
 layer exposes an association between a network identity and a vote
@@ -868,10 +1061,13 @@ before the vote is cast, rather than proceeding silently.
 
 ### Submission Timing
 
-A wallet MUST construct a submission schedule as specified in
-[^voting-protocol], which adopts the scheduling discipline ZIP 318
-[^zip-0318] defines for pool-crossing transfers. In summary, and
-normatively by reference to that document, a wallet:
+A wallet MUST construct a submission schedule within the reveal
+window, against `reveal_end_time`, as specified in the "Submission
+Timing" section of [^voting-protocol], which adopts the scheduling
+discipline ZIP 318 [^zip-0318] defines for pool-crossing transfers. On
+the relayed path the drawn times are the `submit_at` values handed to
+relays. In summary, and normatively by reference to that document, a
+wallet:
 
 - MUST shuffle the vote's shares into a uniformly random order before
   assigning submission times, so that the order in which share values
@@ -888,9 +1084,11 @@ A wallet MUST NOT place a voter's entire ballot count into a single
 share.
 
 **When the window is short.** Where insufficient time remains before
-`vote_end_time` to run the full schedule, a wallet MUST draw each
-remaining share's submission time independently and uniformly from the
-remaining interval, and MUST NOT submit the remaining shares together.
+`reveal_end_time`, less the safety margin $\Delta$ that
+[^voting-protocol] specifies, to run the full schedule, a wallet MUST
+draw each remaining share's submission time independently and
+uniformly from the remaining interval, and MUST NOT submit the
+remaining shares together.
 Submitting promptly is not a substitute for submitting independently: a
 wallet that responds to a closing round by sending everything at once
 reproduces through timing precisely the exposure that removing
@@ -900,9 +1098,16 @@ Where the remaining window is too short to submit all shares even under
 the compressed schedule, a wallet MUST inform the voter before
 proceeding rather than submitting silently.
 
-A wallet SHOULD present the voting deadline to the user early enough
-that this case is avoidable, since every option available once the
-window is short is worse than having started sooner.
+**Returning to reveal.** A vote is counted only if the wallet is opened
+at least once during the reveal window, obtains the final VCT root,
+constructs its share reveal messages and either submits them or hands
+them to relays. A wallet that is not opened between `vote_end_time` and
+`reveal_end_time` cannot reveal, and the vote is lost. A wallet SHOULD
+surface this to the user when the vote is cast, SHOULD present both
+`vote_end_time` and `reveal_end_time`, and SHOULD prompt the user to
+return during the reveal window, early enough that the short-window
+case above is avoidable, since every option available once the window
+is short is worse than having started sooner.
 
 ### Partial Delegation
 
@@ -951,14 +1156,22 @@ the config schema (e.g., adding a new required top-level field) bumps
 `vote_protocol`, and a change to decryption or aggregation bumps
 `tally`.
 
+`config_version` also selects the version in the attestation domain
+separator (see [Configuration Authentication]). Version 2 added the
+`signatures` attestation. Version 3 added `reveal_end_time` and
+`relays`, and moved the attestation to
+`ZcashVotingRoundAttestation:v3`, whose signed bytes include
+`reveal_end_time`.
+
 ## Transaction Lifecycle
 
 ### Broadcast Semantics
 
-Transaction submission endpoints (`/delegate-vote`, `/cast-vote`)
-return synchronously after initial validation. A successful response
-(HTTP 200, `code` = 0) indicates that the transaction passed validation
-and entered the mempool. It does not guarantee inclusion in a block.
+Transaction submission endpoints (`/delegate-vote`, `/cast-vote`,
+`/reveal-share`) return synchronously after initial validation. A
+successful response (HTTP 200, `code` = 0) indicates that the
+transaction passed validation and entered the mempool. It does not
+guarantee inclusion in a block.
 
 ### Confirmation Polling
 
@@ -1005,7 +1218,7 @@ context. The following table lists every occurrence and its encoding:
 | URL path parameters (`{round_id}`, `{roundId}`) | Hex (64 lowercase characters) |
 | Delegation request body (`vote_round_id`)       | Base64 (32 bytes)             |
 | Vote commitment request body (`vote_round_id`)  | Base64 (32 bytes)             |
-| Share submission request body (`vote_round_id`) | Hex (64 lowercase characters) |
+| Share reveal message (`vote_round_id`)          | Base64 (32 bytes)             |
 | Chain query response bodies (`vote_round_id`)   | Base64 (32 bytes)             |
 - **Integers**: JSON numbers. Fields typed `uint32` or `uint64` in the
 protocol definition are encoded as JSON numbers.
@@ -1022,13 +1235,13 @@ was built against:
 |---|---|
 | Vote protocol circuits | Determine what the proofs a wallet constructs actually prove. |
 | Vote chain / SDK | Determines transaction acceptance and chain semantics. |
-| Client voting library | Determines share decomposition, server selection and timing behaviour. |
+| Client voting library | Determines share decomposition, relay selection and timing behaviour. |
 
 Recording the client library version alone is insufficient: the
 circuits determine the meaning of the proofs, and a library version
 does not identify them.
 
-Where a wallet implements share decomposition, server selection or
+Where a wallet implements share decomposition, relay selection or
 submission timing itself rather than consuming them from a shared
 library, it MUST state this, because such a wallet does not inherit
 changes to those behaviours when the library is updated.
@@ -1038,11 +1251,25 @@ changes to those behaviours when the library is updated.
 
 ## Unified Vote Servers
 
-All endpoints — chain queries, transaction submission, and share
-submission — are served under the `/shielded-vote/v1/` path prefix
-from the same `vote_servers` base URLs. In the current architecture,
-a single `svoted` process hosts every endpoint on the same port, so a
-separate helper URL is unnecessary.
+All chain endpoints — queries and transaction submission, including
+direct share reveal — are served under the `/shielded-vote/v1/` path
+prefix from the same `vote_servers` base URLs. In the current
+architecture, a single `svoted` process hosts every chain endpoint on
+the same port.
+
+## Relays Are Listed Separately
+
+The [Relay Hand-off] endpoint is served from the configuration's
+`relays` list rather than from `vote_servers`. A wallet must hand each
+message of a vote to a distinct relay, so the number of relays a
+wallet can use is the number of distinct relay operators the
+configuration names; a deployment that hosted the relay endpoint on
+the same process as the chain endpoints would give a wallet with one
+vote server exactly one relay. Listing relays separately also lets a
+deployment keep relay operators disjoint from key-share holders, which
+[^voting-protocol] records as an operational requirement. Nothing
+prevents a deployment from operating both a vote server and a relay,
+but the wallet treats the two lists independently.
 
 ## Independent Component Versions
 
@@ -1065,19 +1292,24 @@ volumes involved.
 
 # Open issues
 
+- [Share Status] lets a wallet confirm inclusion only by disclosing
+  which nullifiers are its own. A private-retrieval confirmation
+  mechanism is an open issue in [^voting-protocol].
+
 # Reference implementation
 
-A reference implementation of the vote chain REST API and helper server
-is available at
-[valargroup/vote-sdk](https://github.com/valargroup/vote-sdk).
+A reference implementation of the vote chain REST API, together with
+the server-side share submission path that [^voting-protocol] replaces
+with relays, is available at
+[valargroup/vote-sdk](https://github.com/valargroup/vote-sdk). It does
+not yet implement the reveal window, direct share reveal, or the relay
+hand-off specified here.
 
 # References
 
 [^BCP14]: [Information on BCP 14 -- "RFC 2119: Key words for use in RFCs to Indicate Requirement Levels" and "RFC 8174: Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"](https://www.rfc-editor.org/info/bcp14)
 
 [^protocol]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1] or later](protocol/protocol.pdf)
-
-[^protocol-poseidon]: [Zcash Protocol Specification, Version 2025.6.3 [NU6.1]. Section 5.4.2: Pseudo Random Functions](protocol/protocol.pdf#concreteprfs)
 
 [^rfc4648]: [RFC 4648: The Base16, Base32, and Base64 Data Encodings](https://www.rfc-editor.org/rfc/rfc4648)
 
