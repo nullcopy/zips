@@ -2145,9 +2145,9 @@ order, of:
 | `reveal_end_time`, big-endian unsigned | 8 bytes |
 | `trustees_hash` | 32 bytes |
 
-where `trustees_hash` is the BLAKE2b-256 [^blake2] hash, with
-personalization `ZcashVotingTrustees`, of the concatenation of the
-trustees' account public keys in the order the configuration lists
+where `trustees_hash` is the BLAKE2b-256 [^blake2] hash, with the
+16-byte personalization `ZcashVoteTrustee`, of the concatenation of
+the trustees' account public keys in the order the configuration lists
 them, each encoded as specified in
 `draft-valargroup-shielded-voting-wallet-api` [^wallet-api]. All
 components are fixed width, so the encoding is unambiguous without
@@ -2293,6 +2293,15 @@ submits an acknowledgement transaction, signed by its account key,
 carrying
 
 $$\mathsf{SHA256}\bigl(\texttt{"ack"} \mathbin\| \mathsf{vote}\_\mathsf{round}\_\mathsf{id} \mathbin\| \mathsf{ea}\_\mathsf{pk} \mathbin\| \mathsf{trustee}\_\mathsf{address}\bigr)$$
+
+where $\mathsf{trustee}\_\mathsf{address}$ is the raw byte encoding
+of the trustee's account address, as carried in the round creation
+transaction, without any human-readable prefix or checksum. The
+acknowledgement transaction MUST also carry a detached signature by
+the trustee's account key over this 32-byte value, so that a wallet
+can verify the acknowledgement from the value, the signature and the
+trustee's account public key alone, without interpreting vote chain
+transactions.
 
 A trustee MUST NOT acknowledge a share that fails the verification key
 check. Committing to $\mathsf{ea}\_\mathsf{pk}$ keeps an
