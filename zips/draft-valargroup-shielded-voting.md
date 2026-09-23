@@ -24,16 +24,201 @@ Specification. [^protocol]
 
 The terms below are to be interpreted as follows:
 
+Administrator
+
+: A party whose signature over a round's defining fields wallets
+  recognise. See [Round Attestation].
+
+Attestation
+
+: An administrator's signature over a round's defining fields,
+  establishing to wallets that the round's configuration is the one the
+  administrator independently verified. See [Round Attestation].
+
 Ballot
 
 : A unit of voting weight derived from a zatoshi balance. The
   conversion from zatoshi to ballots is defined in [Ballot Scaling].
+
+Decision
+
+: A voter's chosen option for a proposal, represented as the option's
+  0-indexed position in the proposal's option list. A decision is
+  committed to in the Vote Commitment and is never published in
+  cleartext; see [Proposals and Decisions] and [Vote Reveal Proof].
+
+Decryption threshold ($t$)
+
+: The number of key-share holders whose partial decryptions are needed
+  to decrypt an aggregate ciphertext. Fixed by
+  [Election Authority Key Ceremony].
+
+Delegation
+
+: The first phase of the protocol, in which a holder proves ownership
+  of notes at the snapshot and transfers voting authority to a
+  governance hotkey, producing a Vote Authority Note. See
+  [Delegation Phase]. Distinct from the relaying of finished share
+  reveal messages, which delegates nothing.
+
+Election authority (EA)
+
+: The El Gamal keypair under which a round's vote shares are encrypted,
+  and whose private key decrypts the aggregate tally. A fresh keypair is
+  generated for each round by distributed key generation among the
+  round's key-share holders, so that no party ever holds the private
+  key and decrypting the tally requires a threshold of holders acting
+  together. See [Election Authority Key Ceremony] and
+  [Election Authority Key Custody].
+
+Election authority key ceremony
+
+: The distributed key generation protocol, run on the vote chain, that
+  produces a round's election authority public key and each holder's
+  key share. See [Election Authority Key Ceremony].
+
+Encrypted share accumulator
+
+: Per-round vote chain state holding, for each proposal and each option
+  position, the running component-wise sum of revealed El Gamal
+  ciphertexts. See [Vote Chain].
+
+Final VCT root
+
+: The root of a round's Vote Commitment Tree at the moment the round
+  leaves the ACTIVE state. Every Vote Reveal Proof in the round is
+  anchored to it. See [Round Lifecycle].
+
+Governance hotkey
+
+: An Orchard-protocol key hierarchy, distinct from the holder's
+  spending key, that provides the key material for all voting
+  operations after delegation. The hotkey is generated on a
+  general-purpose device capable of ZKP construction.
+
+Governance nullifier
+
+: An alternate nullifier (as defined in [^balance-proof]) scoped to the
+  governance domain, published during delegation to prevent
+  double-delegation of the same note within a voting round.
+
+Ironwood pool
+
+: The Zcash shielded pool over which votes are weighted. The Ironwood
+  pool uses the Orchard protocol: its notes, key hierarchy, note
+  commitment tree, nullifiers, signatures and proving system are those
+  of Orchard as specified in [^protocol]. References in this ZIP to
+  Orchard keys, notes, signatures or circuits refer to those
+  constructions as used in the Ironwood pool.
+
+Key-share holder
+
+: A holder of a share of a round's election authority private key,
+  produced by the key ceremony. Not a validator; see [Ratification] and
+  `draft-valargroup-shielded-voting-setup` [^voting-setup].
+
+Option
+
+: One of the labeled choices a proposal offers. A proposal has between
+  2 and $N_{\mathsf{opt}}$ options. See [Proposals and Decisions].
+
+Partial decryption
+
+: A key-share holder's contribution to decrypting an aggregate
+  ciphertext, accompanied by a proof that it was computed with the
+  holder's share. See [Partial Decryption].
+
+Poll runner
+
+: The entity responsible for conducting a voting round; it chooses the
+  snapshot and derives the round's roots. See [Snapshot Configuration].
+
+Proposal
+
+: A question put to voters in a voting round, with a fixed list of
+  options. A round carries up to 15 proposals, identified by 1-indexed
+  sequential integers. See [Proposals and Decisions].
+
+Ratification
+
+: A key-share holder's published statement, made by acknowledging its
+  key share, that it holds a verified share for a round and will take
+  part in its tally. See [Ratification].
+
+Relay
+
+: An untrusted store-and-forward service to which a voter MAY hand a
+  finished Share Reveal Message for submission to the vote chain at a
+  later time. A relay constructs no proofs and receives no witness
+  material. See [Share Submission].
+
+Reveal window
+
+: The period, following the voting window, during which the vote chain
+  accepts share reveal transactions for a round. It ends at the round's
+  $\mathsf{reveal}\_\mathsf{end}\_\mathsf{time}$. See [Round Lifecycle].
+
+Share commitment
+
+: A blinded Poseidon commitment to one encrypted share's ciphertext.
+  The $N_s$ share commitments of a vote are hashed into the shares hash.
+  See [Vote Share].
+
+Share nullifier
+
+: A nullifier derived from a vote commitment and share index, published
+  when a share is revealed, preventing double-counting.
+
+Shares hash
+
+: The Poseidon hash of a vote's $N_s$ blinded share commitments, bound
+  into the Vote Commitment. See [Shares Hash].
+
+Snapshot
+
+: The Zcash mainnet block, identified by height and hash, at which the
+  eligible balances of the Ironwood pool are captured for a round. See
+  [Snapshot Configuration].
+
+Snapshot height
+
+: The Zcash mainnet block height of the snapshot. See
+  [Snapshot Configuration] for constraints.
+
+Submission schedule
+
+: The set of times at which a client's $N_s$ share reveal messages are
+  submitted, drawn as specified in [Submission Timing].
+
+Validator
+
+: An operator of the vote chain's consensus. Validators determine
+  transaction inclusion (see [Transaction Inclusion]) and hold no
+  election authority key shares.
+
+VAN nullifier
+
+: A nullifier derived from a VAN commitment and published when the VAN
+  is consumed (to cast a vote or delegate), preventing double-spending
+  of voting authority.
+
+Verification key
+
+: The public value $\mathsf{VK}_i = [\mathsf{sk}_i]\, G$ corresponding
+  to key-share holder $i$'s share, derivable by anyone from the
+  ceremony's published commitments. See
+  [Election Authority Key Ceremony].
 
 Vote Authority Note (VAN)
 
 : A commitment inserted into the Vote Commitment Tree that represents
   spendable voting authority. A VAN binds a voting hotkey, a ballot
   count, a voting round identifier, and a proposal authority bitmask.
+
+Vote chain
+
+: The purpose-built chain on which delegation, vote, share reveal and
+  ceremony transactions are recorded. See [Vote Chain].
 
 Vote Commitment (VC)
 
@@ -46,12 +231,19 @@ Vote Commitment Tree (VCT)
 
 : An append-only Poseidon Merkle tree maintained by the vote chain that
   stores both VANs and VCs as leaves. A separate VCT is maintained per
-  voting round; trees from different rounds are fully isolated.
+  voting round; trees from different rounds are fully isolated. VANs
+  span every proposal in a round, so the tree is per round rather than
+  per proposal.
+
+Vote manager
+
+: The on-chain role authorised to create voting rounds. See
+  [Poll Creation].
 
 Vote share
 
 : One of $N_s$ encrypted portions of a voter's ballot count within a
-  Vote Commitment. Each share is submitted independently for
+  Vote Commitment. Each share is revealed independently for
   homomorphic accumulation.
 
 Voting round
@@ -61,90 +253,35 @@ Voting round
   is associated with a pool snapshot, an election authority public key,
   and a set of proposals.
 
-Election authority (EA)
+Voting window
 
-: The El Gamal keypair under which a round's vote shares are encrypted,
-  and whose private key decrypts the aggregate tally. A fresh keypair is
-  generated for each round, and its private key is split into shares
-  distributed to key-share holders, so that decrypting the tally requires
-  a threshold of them acting together. See
-  [Election Authority Key Ceremony] and [Election Authority Key Custody].
-
-Key-share holder
-
-: A holder of a share of a round's election authority private key. Not
-  a validator; see [Ratification] and `draft-valargroup-shielded-voting-setup` [^voting-setup].
-
-Poll runner
-
-: The entity responsible for conducting a voting round; it chooses the
-  snapshot and derives the round's roots. See [Snapshot Configuration].
-
-Vote manager
-
-: The on-chain role authorised to create voting rounds. See
-  [Poll Creation].
-
-Administrator
-
-: A party whose signature over a round's defining fields wallets
-  recognise. See [Round Attestation].
-
-Snapshot height
-
-: The Zcash mainnet block height at which eligible Orchard note balances
-  are captured. See [Snapshot Configuration] for constraints.
-
-Submission server
-
-: An untrusted server to which a voter delegates the construction and
-  submission of Vote Reveal Proofs.
-
-Governance hotkey
-: An Orchard key hierarchy, distinct from the holder's spending key,
-  that provides the key material for all voting operations after
-  delegation. The hotkey is generated on a general-purpose device
-  capable of ZKP construction.
-
-Governance nullifier
-
-: An alternate nullifier (as defined in [^balance-proof]) scoped to the
-  governance domain, published during delegation to prevent
-  double-delegation of the same Orchard note within a voting round.
-
-VAN nullifier
-
-: A nullifier derived from a VAN commitment and published when the VAN
-  is consumed (to cast a vote or delegate), preventing double-spending
-  of voting authority.
-
-Share nullifier
-
-: A nullifier derived from a vote commitment and share index, published
-  when a share is revealed, preventing double-counting.
+: The period during which the vote chain accepts delegation and vote
+  transactions for a round. It ends at the round's
+  $\mathsf{vote}\_\mathsf{end}\_\mathsf{time}$. See [Round Lifecycle].
 
 
 # Abstract
 
 This ZIP specifies a shielded voting protocol that allows holders of
-Orchard notes to cast stake-weighted votes on proposals without revealing
+notes in the Ironwood pool to cast stake-weighted votes on proposals without revealing
 their identity, individual balances, or vote allocations.
 
 The protocol proceeds in three proving phases. First, a *delegation
 proof* (building on the Orchard Proof-of-Balance [^balance-proof])
-converts proven Orchard balance into a Vote Authority Note on a
+converts proven Ironwood pool balance into a Vote Authority Note on a
 purpose-built vote chain. Second, a *vote proof* consumes a VAN to
 produce a Vote Commitment containing $N_s$ El Gamal-encrypted shares of
 the voter's ballot count, split across vote options. Third, a *vote
-reveal proof*, constructed by the voter's client or by a submission
-server acting for it, opens individual encrypted shares for homomorphic
-accumulation, without revealing which Vote Commitment the share
-originated from.
+reveal proof*, constructed by the voter's client once voting has closed,
+opens individual encrypted shares for homomorphic accumulation, without
+revealing which Vote Commitment the share originated from or which
+option it supports.
 
-After the voting window closes, anyone can publicly aggregate the
-revealed El Gamal ciphertexts per proposal option. Holders of Shamir
-shares of the election authority key — a set disjoint from the
-validators — cooperate to produce partial decryptions; the results are
+After the reveal window closes, anyone can publicly aggregate the
+revealed El Gamal ciphertexts per proposal option. Holders of shares of
+the election authority key — a set disjoint from the validators, among
+whom the key was generated without ever existing whole — cooperate to
+produce partial decryptions; the results are
 combined via Lagrange interpolation and the aggregate total is publicly
 verified. The tally itself reveals only aggregates. What a party holding
 a threshold of key shares can recover beyond that, and what the parties
@@ -166,7 +303,7 @@ tension: demonstrating voting power requires proving a balance, but
 linking that balance to a vote destroys the privacy that shielded
 transactions provide.
 
-This ZIP addresses that tension for Zcash's Orchard shielded pool. The
+This ZIP addresses that tension for Zcash's Ironwood shielded pool. The
 Orchard Proof-of-Balance [^balance-proof] provides the foundational
 primitive, proving note ownership without revealing standard nullifiers.
 This ZIP builds on that primitive to specify a complete voting protocol
@@ -176,22 +313,24 @@ with the following properties:
   locally-generated hotkey via a zero-knowledge proof. The delegation
   is unlinkable to the holder's on-chain identity.
 - **Private vote splitting.** Votes are decomposed into El Gamal-
-  encrypted shares submitted independently, preventing balance
-  reconstruction via timing or amount analysis.
+  encrypted shares, each revealed independently over its own network
+  connection at its own randomly drawn time, so that no party can group
+  a voter's shares by content, timing or origin.
 - **Homomorphic tallying.** Encrypted shares are accumulated on-chain
   via component-wise point addition. Only the aggregate total per
-  proposal option is ever decrypted.
+  proposal option is ever decrypted, and no decision appears in
+  cleartext.
 
 The protocol is motivated by coinholder governance in the Zcash
 ecosystem, where participants vote on proposals weighted by their ZEC
 holdings. The same mechanism applies to any stake-weighted polling system
-over an Orchard-like shielded pool.
+over a shielded pool built on the Orchard protocol.
 
 
 # Privacy Implications
 
 **Unlinkability to on-chain identity.** The delegation phase moves
-voting authority from the holder's Orchard spending key to an unlinkable
+voting authority from the holder's spending key to an unlinkable
 governance hotkey. All subsequent voting transactions use this hotkey.
 An observer who sees both the governance nullifiers (published during
 delegation) and the standard nullifiers (published when notes are later
@@ -199,67 +338,88 @@ spent on-chain) cannot link them without knowledge of $\mathsf{nk}$.
 This follows from the alternate nullifier unlinkability property
 established in [^balance-proof].
 
-**Balance hiding via vote splitting.** A voter's total ballot count is
-decomposed into $N_s$ shares encrypted under the election authority's
-public key, and each share is submitted independently. This raises the
-cost of recovering a voter's total weight, but it does not by itself
-hide that total. Because the shares sum to
-$\mathsf{num}\_\mathsf{ballots}$, any party able to decrypt individual
-share ciphertexts learns an estimate of the total from any share it
-decrypts, with accuracy determined by the decomposition strategy
-(see [Vote Share] and [Why Randomized Share Decomposition]). Vote
-splitting is therefore a mitigation whose strength rests on the
-threshold assumption stated below, not an independent guarantee.
+**Share unlinkability.** A share reveal transaction exposes a share
+nullifier, a vector of El Gamal ciphertexts, a proposal identifier, the
+round's final VCT root and the round identifier. The nullifier is a
+Poseidon hash whose preimage includes the private vote commitment and a
+private blind factor; each ciphertext carries fresh randomness; the
+root and round identifier take the same value in every reveal of the
+round. Nothing in the transaction's contents identifies the vote
+commitment it opens or relates it to any other reveal. The anonymity
+set of a revealed share is every share revealed for the same proposal.
+This holds against a chain observer, against a relay, and against a
+coalition holding $t$ key shares: such a coalition can decrypt any
+individual share, but decryption yields a value, not an association.
+Whether two shares belong to one vote is not recoverable from any
+content the protocol publishes. What remains is metadata — the time at
+which each reveal is submitted and the network path it arrives by —
+which [Share Submission] and [Submission Timing] address.
+
+**Balance hiding via vote splitting.** A voter's ballot count is
+decomposed into $N_s$ shares, each encrypted under the election
+authority's public key and revealed independently. A party that
+decrypts one share learns an estimate of the voter's total whose
+accuracy is bounded by the decomposition (see [Vote Share] and
+[Why Randomized Share Decomposition]); a party that gathers and
+decrypts several shares of one vote estimates the total more closely,
+and one that gathers all $N_s$ recovers it exactly. Splitting therefore
+protects amounts only insofar as shares cannot be grouped. The protocol
+publishes nothing that groups them (see the previous paragraph), so the
+submission process carries the remaining burden: no two shares of one
+vote may be linkable by timing, by network origin, or by any metadata a
+relay or validator logs. That is the purpose of the per-share network
+isolation and memoryless scheduling required in [Share Submission] and
+[Submission Timing], and of the rule that a relay never holds more than
+one share of a vote.
 
 **Individual vote amounts hidden from the public.** Each share is an
 El Gamal ciphertext whose plaintext value is never revealed on-chain,
-and only the aggregate total per (proposal, decision) pair is decrypted
+and only the aggregate total per (proposal, option) pair is decrypted
 at tally time. This holds against any party that does not hold $t$
-shares of $\mathsf{ea}\_\mathsf{sk}$. It does not hold against the
-threshold itself: the key that opens the aggregate opens any individual
-share ciphertext, and those ciphertexts are recorded on the vote chain
-permanently.
+shares of $\mathsf{ea}\_\mathsf{sk}$. A coalition holding $t$ shares can
+open any individual share ciphertext, and those ciphertexts are
+recorded on the vote chain permanently; what such a coalition then
+holds is $N_s$ unlinkable fragments per voter, mixed among every other
+voter's fragments for the same proposal.
+
+**Decision secrecy.** A voter's decision is a private witness to both
+the Vote Proof and the Vote Reveal Proof and appears in no transaction.
+Each reveal carries one ciphertext per option position; the position
+that encrypts the share value is indistinguishable from the positions
+that encrypt zero without $t$ key shares. Chain observers, validators
+and relays therefore learn neither how any share voted nor the running
+per-option totals while a round is open. A coalition holding $t$ shares
+that decrypts an individual share learns that share's option along with
+its value, subject to the unlinkability above.
 
 **Vote commitment unlinkability.** The Vote Reveal Proof proves
 that a revealed share belongs to some valid Vote Commitment in the VCT
 without revealing which one. Blinded per-share commitments prevent
 observers from recomputing $\mathsf{shares}\_\mathsf{hash}$ from on-chain
-ciphertexts and linking revealed shares back to a specific VC.
+ciphertexts and linking revealed shares back to a specific VC. Every
+reveal in a round is anchored to the same final VCT root, so the anchor
+partitions nothing.
 
-**Trust assumptions.** Once the key ceremony has completed and the party
-that generated $\mathsf{ea}\_\mathsf{sk}$ has erased it, no single party
-holds it: each key-share holder holds only a Shamir share. That erasure
-is not verifiable by any other party; see the "Election Authority Key
-Custody" section of `draft-valargroup-shielded-voting-setup`
-[^voting-setup]. An adversary must obtain at least $t$ shares to
-reconstruct the key and decrypt individual share ciphertexts, where $t$
-and the holder set are specified in that document.
+**Trust assumptions.** The election authority private key is never
+held by any party. The key ceremony is a distributed key generation
+among the round's key-share holders (see
+[Election Authority Key Ceremony]); each holder ends the ceremony with
+a share and nobody, at any point, with the key. An adversary must obtain
+at least $t$ shares to decrypt an individual share ciphertext, where $t$
+and the holder set are fixed by the ceremony and published with the
+round. Vote splitting does not substitute for that threshold: it bounds
+what a coalition that does reach $t$ can learn about any one voter, by
+ensuring that what it can decrypt cannot be grouped.
 
-Vote splitting does not substitute for that threshold. A party holding
-$t$ shares can decrypt any individual share ciphertext, and the
-Share Submission Payload (see [Share Submission]) carries values that
-are identical across all
-$N_s$ payloads of one vote, so a party that receives two or more of them
-can group them without timing analysis — as described immediately below
-for submission servers. Splitting raises the number of parties that must
-cooperate; it does not make individual amounts unrecoverable.
-Submission servers learn the encrypted share ciphertext, blind factor,
-and blinded share commitments for each share they submit, along with
-the proposal identifier and vote decision. They cannot decrypt
-plaintext amounts. They can, however, determine that two shares belong
-to the same vote: the Share Submission Payload carries
-$\mathsf{vc}$, the VCT position, and
-$\mathsf{shares}\_\mathsf{hash}$, each of which is identical across all
-$N_s$ payloads of one vote (see [Server-Assisted Submission]). A server
-that receives two or more of a voter's shares can group them from the
-payload contents alone, without timing analysis.
-
-The primary trust requirement on submission servers is therefore not
-that they avoid leaking timing metadata, but that they do not correlate
-payloads, and that they do not combine that correlation with the
-ability to decrypt. Randomized delays and multiple servers do not
-address the correlation channel, because the correlating values are
-carried in the payload itself.
+Relays are trusted for availability only. A relay receives a finished
+Share Reveal Message — the same bytes the chain will record — together
+with the time at which to submit it, and learns from that message
+exactly what a chain observer learns, plus the network origin of the
+client that handed it over and the requested submission time. A relay
+holding one share of a vote can group nothing. A relay that receives
+two shares of one vote could associate them by origin or by the pair of
+requested times, which is why [Share Submission] requires one relay per
+share and an independent network path per submission.
 
 **Non-membership tree queries.** Obtaining exclusion proofs for the
 nullifier non-membership tree during delegation requires a source for
@@ -279,13 +439,12 @@ protocol conceals the query.
 - No double-delegation for the same note within a voting round.
 - No double voting for the same voting share within the same proposal.
 - Individual vote amounts are not revealed at any point; only aggregate
-  totals per (proposal, decision) pair are recoverable.
-  **The design specified in this ZIP does not currently meet this
-  requirement.** The election authority key opens individual share
-  ciphertexts as readily as the aggregate, so any party holding $t$
-  key shares can recover individual vote amounts. This requirement is
-  retained as stated because it expresses the intended guarantee; see
-  [Open issues] for the work needed to satisfy it.
+  totals per (proposal, option) pair are recoverable. A party holding
+  $t$ key shares can decrypt an individual share ciphertext, but no
+  party can determine which shares belong to one vote, so no voter's
+  total is recoverable; see [Privacy Implications].
+- A voter's decision is not revealed to any party holding fewer than
+  $t$ key shares.
 - The aggregate tally is publicly verifiable: any party can confirm the
   homomorphic accumulation.
 - The delegation phase is compatible with hardware wallets that support
@@ -303,14 +462,12 @@ protocol conceals the query.
   onboarding, nullifier service operation, deployment architecture, and
   audit procedures. These are specified in
   `draft-valargroup-shielded-voting-setup` [^voting-setup].
-- The operation of a submission server — its service interface,
-  duplicate handling, availability and fault tolerance, and the
-  relationship between server operators and vote chain validators — is
-  out of scope; it belongs with the vote chain's operational
-  specification. Note that this ZIP now specifies share **distribution**
-  (see [Server Selection]), because that rule determines whether this
-  ZIP's privacy claims hold and cannot be delegated to a document that
-  does not state them.
+- The service interface of a relay, its availability and fault
+  tolerance, and the relationship between relay operators and other
+  roles are out of scope; they belong with the operational
+  specification. The rules a client follows in handing messages to
+  relays are in scope (see [Share Submission]), because they determine
+  whether this ZIP's privacy claims hold.
 - Post-quantum security of the El Gamal encryption layer is out of
   scope.
 - Retrieval of nullifier non-membership proofs by clients that do not
@@ -323,41 +480,40 @@ protocol conceals the query.
 
 This section is non-normative.
 
-The protocol proceeds in five phases within a voting round.
+The protocol proceeds in four phases within a voting round.
 
-**Phase 1: Delegation.** A holder proves ownership of unspent Orchard
-notes at a pool snapshot (using the Claim circuit from [^balance-proof])
-and delegates voting authority to a locally-generated governance hotkey.
-The delegation produces a Vote Authority Note (VAN) that is inserted
-into the Vote Commitment Tree on the vote chain. Governance nullifiers
-are published to prevent double-delegation.
+**Phase 1: Delegation.** A holder proves ownership of unspent notes in
+the Ironwood pool at a pool snapshot (using the Claim circuit from
+[^balance-proof]) and delegates voting authority to a locally-generated
+governance hotkey. The delegation produces a Vote Authority Note (VAN)
+that is inserted into the Vote Commitment Tree on the vote chain.
+Governance nullifiers are published to prevent double-delegation.
 
 **Phase 2: Voting.** The governance hotkey consumes a VAN by publishing
 its VAN nullifier, and produces two new VCT leaves: a replacement VAN
 with the voted proposal's authority bit cleared, and a Vote Commitment
 containing $N_s$ El Gamal-encrypted shares of the voter's ballot count.
+Delegation and voting both take place during the voting window.
 
-**Phase 3: Share submission.** The voter submits each encrypted share
-independently. On the default path the voter constructs the Vote Reveal
-Proof for each share and submits it directly. A voter whose client
-cannot construct proofs may instead send each share as a payload to a
-submission server, which constructs the proof on the voter's behalf;
-that path discloses to the server which shares belong to the same vote,
-and is specified as optional for that reason.
+**Phase 3: Share reveal.** Once the voting window closes, the VCT is
+frozen and its final root published. The voter's client constructs a
+Vote Reveal Proof for each of its $N_s$ shares against that root. Each
+proof opens one share as a vector of ciphertexts, one per option
+position, without revealing which Vote Commitment it came from or which
+position carries the share's value. The client submits each resulting
+message to the vote chain over an independent network path at an
+independently drawn time within the reveal window, either directly or
+by handing the finished message to a relay that submits it later. The
+chain accumulates the ciphertext vectors homomorphically.
 
-**Phase 4: Share reveal.** Each Vote Reveal Proof (proving the share
-belongs to a valid VC in the VCT without revealing which one) is
-submitted to the vote chain. The chain accumulates the revealed El Gamal
-ciphertexts homomorphically.
-
-**Phase 5: Tally.** After the voting window closes, at least $t$
-validators produce partial decryptions of the aggregate ciphertext per
-(proposal, decision) pair. The partial decryptions are stored on-chain
-and combined via Lagrange interpolation to recover the total ballot
-count (via the bounded discrete-log recovery procedure defined
-in [Decryption]). Correctness is publicly
-verifiable: anyone can recompute the Lagrange combination from the
-on-chain partial decryptions.
+**Phase 4: Tally.** After the reveal window closes, at least $t$
+key-share holders produce partial decryptions of the aggregate
+ciphertext per (proposal, option) pair. The partial decryptions are
+stored on-chain and combined via Lagrange interpolation to recover the
+total ballot count (via the bounded discrete-log recovery procedure
+defined in [Decryption]). Correctness is publicly verifiable: anyone
+can recompute the Lagrange combination from the on-chain partial
+decryptions.
 
 
 # Specification
@@ -409,10 +565,10 @@ encryption of the sum of their plaintexts:
 $$\mathsf{Enc}(a, r_1) + \mathsf{Enc}(b, r_2) = \mathsf{Enc}(a + b,\; r_1 + r_2)$$
 
 This is what allows the vote chain to aggregate revealed share
-ciphertexts into a per-$(\mathsf{proposal}\_\mathsf{id},
-\mathsf{vote}\_\mathsf{decision})$ accumulator without decrypting any
-of them, and it is why no party needs $\mathsf{ea}\_\mathsf{sk}$ before
-the voting window closes.
+ciphertexts into a per-$(\mathsf{proposal}\_\mathsf{id}, j)$
+accumulator for each option position $j$ without decrypting any of
+them, and it is why no party needs $\mathsf{ea}\_\mathsf{sk}$ before
+the reveal window closes.
 
 ### Decryption
 
@@ -516,9 +672,9 @@ deterministically from the round's setup parameters by Poseidon
 hashing. Validators and verifiers compute it from the same inputs
 and check that it matches the on-chain identifier.
 
-$$\mathsf{voting}\_{\mathsf{round}\_\mathsf{id}} = \mathsf{Poseidon}\bigl(\mathsf{snapshot}\_\mathsf{height},\ \mathsf{bh}\_\mathsf{lo},\ \mathsf{bh}\_\mathsf{hi},\ \mathsf{ph}\_\mathsf{lo},\ \mathsf{ph}\_\mathsf{hi},\ \mathsf{vote}\_\mathsf{end}\_\mathsf{time},\ \mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root},\ \mathsf{nc}\_\mathsf{root}\bigr)$$
+$$\mathsf{voting}\_{\mathsf{round}\_\mathsf{id}} = \mathsf{Poseidon}\bigl(\mathsf{snapshot}\_\mathsf{height},\ \mathsf{bh}\_\mathsf{lo},\ \mathsf{bh}\_\mathsf{hi},\ \mathsf{ph}\_\mathsf{lo},\ \mathsf{ph}\_\mathsf{hi},\ \mathsf{vote}\_\mathsf{end}\_\mathsf{time},\ \mathsf{reveal}\_\mathsf{end}\_\mathsf{time},\ \mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root},\ \mathsf{nc}\_\mathsf{root}\bigr)$$
 
-The hash uses the $\mathsf{ConstantLength}\langle 8 \rangle$ variant
+The hash uses the $\mathsf{ConstantLength}\langle 9 \rangle$ variant
 of the Poseidon instantiation specified in [Poseidon Instantiation].
 
 where:
@@ -536,12 +692,15 @@ where:
 - $\mathsf{vote}\_\mathsf{end}\_\mathsf{time} \in \{ 0 .. 2^{64}-1 \}$
   — Unix timestamp (seconds) after which votes are no longer
   accepted, encoded as a Pallas base field element.
+- $\mathsf{reveal}\_\mathsf{end}\_\mathsf{time} \in \{ 0 .. 2^{64}-1 \}$
+  — Unix timestamp (seconds) after which share reveals are no longer
+  accepted, encoded as a Pallas base field element.
 - $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root} \in \{ 0 .. q_{\mathbb{P}}-1 \}$
   — root of the nullifier non-membership IMT at the snapshot
   height. MUST be a canonical Pallas base field element.
 - $\mathsf{nc}\_\mathsf{root} \in \{ 0 .. q_{\mathbb{P}}-1 \}$ —
-  Orchard note commitment tree root at the snapshot height. MUST
-  be a canonical Pallas base field element.
+  Ironwood pool note commitment tree root at the snapshot height.
+  MUST be a canonical Pallas base field element.
 
 $\mathsf{snapshot}\_\mathsf{blockhash}$ and
 $\mathsf{proposals}\_\mathsf{hash}$ are split into two 128-bit
@@ -621,7 +780,7 @@ where:
 - $\mathsf{vote}\_\mathsf{decision} \in \{ 0 .. q_{\mathbb{P}}-1 \}$ — the
   voter's choice (0-indexed into the proposal's declared options).
 
-A VC MUST be created during voting (Phase 2) and opened during share reveal (Phase 4/5).
+A VC MUST be created during voting (Phase 2) and opened during share reveal (Phase 3).
 
 The VC hash MUST be posted on-chain as a public input of
 the Vote Proof and inserted into the VCT.
@@ -632,7 +791,7 @@ MUST be private witnesses in that proof.
 
 During share reveal, the Vote
 Reveal Proof MUST prove membership in the VCT without exposing which VC
-is being opened.
+is being opened, and MUST NOT expose $\mathsf{vote}\_\mathsf{decision}$.
 
 ### Vote Share
 
@@ -727,7 +886,7 @@ inserts one VAN; a vote transaction inserts both a new VAN and a VC.
 The vote chain MUST maintain three disjoint nullifier sets:
 
 1. **Governance nullifiers**: prevent double-delegation of mainchain
-   Orchard notes within a voting round.
+   Ironwood pool notes within a voting round.
 2. **VAN nullifiers**: prevent double-spending of voting authority.
 3. **Share nullifiers**: prevent double-counting of revealed shares.
 
@@ -838,12 +997,12 @@ See [Why Deterministic Hotkey Derivation].
 
 ## Ballot Scaling
 
-Orchard note values are denominated in zatoshi. The Delegation Proof
+Note values are denominated in zatoshi. The Delegation Proof
 MUST convert zatoshi to ballots:
 
 $$\mathsf{num}\_\mathsf{ballots} = \left\lfloor \frac{\sum v_i}{12{,}500{,}000} \right\rfloor$$
 
-where $v_i$ are the values of the delegated Orchard notes. One ballot
+where $v_i$ are the values of the delegated notes. One ballot
 equals 0.125 ZEC.
 
 The prover MUST witness $\mathsf{num}\_\mathsf{ballots}$ and a
@@ -871,8 +1030,8 @@ published figure is in.
 
 ### Delegation Proof
 
-The Delegation Proof establishes that a holder owns unspent Orchard
-notes at a pool snapshot and converts the proven balance into a VAN on
+The Delegation Proof establishes that a holder owns unspent Ironwood
+pool notes at a pool snapshot and converts the proven balance into a VAN on
 the vote chain.
 
 The Delegation Proof circuit MUST enforce the same per-note ownership
@@ -890,8 +1049,8 @@ Given a primary input:
   nullifier of the dummy signed note (for spend authorization binding).
 - $\mathsf{rk} ⦂ \mathsf{SpendAuthSig}^{\mathsf{Orchard}}\mathsf{.Public}$ —
   randomized spend authorization verification key.
-- $\mathsf{rt}^{\mathsf{cm}} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — Orchard note
-  commitment tree root at the snapshot height.
+- $\mathsf{rt}^{\mathsf{cm}} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — Ironwood pool
+  note commitment tree root at the snapshot height.
 - $\mathsf{rt}^{\mathsf{excl}} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — nullifier
   non-membership tree root at the snapshot height.
 - $\mathsf{van} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — the initial VAN
@@ -1248,13 +1407,10 @@ checks:
 10. Add $\mathsf{van}\_\mathsf{nullifier}$ to the VAN nullifier set.
 
 Note: $\mathsf{vote}\_\mathsf{decision}$ is a private witness in the
-Vote Proof and MUST NOT be validated out-of-circuit at this stage.
-
-It is validated when the share is revealed:
-the Vote Reveal Proof makes
-$\mathsf{vote}\_\mathsf{decision}$ a public input, and the vote chain
-checks its validity at that point (see [Vote Reveal Proof]
-out-of-circuit step 6).
+Vote Proof and is never published. Its range is enforced when the share
+is revealed, by condition 6 of the [Vote Reveal Proof]; a decision at
+or beyond the proposal's option count is accumulated into a position
+the tally never decrypts.
 
 ### Vote Sighash
 
@@ -1310,14 +1466,24 @@ A vote transaction submitted to the vote chain MUST contain:
 
 ## Share Reveal Phase
 
+Share reveal takes place during the reveal window, after the voting
+window has closed and the round's VCT has been frozen (see
+[Round Lifecycle]). The voter's client constructs one Vote Reveal Proof
+per share and submits the resulting messages as specified in
+[Share Submission]. No party other than the voter's client constructs a
+Vote Reveal Proof; see [Why Relays Do Not Construct Proofs].
+
 ### Vote Reveal Proof
 
 The Vote Reveal Proof opens a single encrypted share from a Vote
-Commitment, revealing the El Gamal ciphertext for homomorphic
-accumulation, without revealing the plaintext amount or which Vote
-Commitment the share came from. This proof is constructed by the
-submission server, not the voter. The Vote Reveal Proof circuit MUST
-enforce all conditions specified below.
+Commitment for homomorphic accumulation, without revealing the
+plaintext amount, which Vote Commitment the share came from, or which
+option the share supports. It publishes a vector of
+$N_{\mathsf{opt}} = 8$ El Gamal ciphertexts, one per option position:
+the position matching the vote's decision carries the share's
+committed ciphertext, and every other position carries a fresh
+encryption of zero. The Vote Reveal Proof circuit MUST enforce all
+conditions specified below.
 
 #### Public Inputs
 
@@ -1325,30 +1491,37 @@ Given a primary input:
 
 - $\mathsf{share}\_\mathsf{nullifier} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ —
   prevents double-counting.
-- $C_{1,x}, C_{1,y}, C_{2,x}, C_{2,y} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — the
-  $x$- and $y$-coordinates of the El Gamal ciphertext points $(C_1, C_2)$
-  for this share.
+- $E_{j,1,x}, E_{j,1,y}, E_{j,2,x}, E_{j,2,y} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$
+  for each $j \in \{0 \ldots N_{\mathsf{opt}} - 1\}$ — the coordinates
+  of the option-vector ciphertexts $E_j = (E_{j,1}, E_{j,2})$.
 - $\mathsf{proposal}\_\mathsf{id} ⦂ \{1 \ldots 15\}$ — which proposal.
-- $\mathsf{vote}\_\mathsf{decision} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — the voter's choice.
-- $\mathsf{rt}^{\mathsf{vct}} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — root of the
-  Vote Commitment Tree.
+- $\mathsf{rt}^{\mathsf{vct}} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — the
+  round's final VCT root.
 - $\mathsf{voting}\_{\mathsf{round}\_\mathsf{id}} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$
+- $\mathsf{ea}\_\mathsf{pk} ⦂ \mathbb{P}^*$ — election authority public
+  key ($x$ and $y$ coordinates).
 
 #### Auxiliary Inputs
 
-The prover (submission server) knows:
+The prover (the voter's client) knows:
 
 - $\mathsf{vc} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$ — the vote commitment
   being opened (hidden from the verifier).
 - $\mathsf{path}^{\mathsf{vct}}, \mathsf{pos}^{\mathsf{vct}}$ — Merkle proof for the VC
   in the VCT.
 - $\mathsf{shares}\_\mathsf{hash} ⦂ \{ 0 .. q_{\mathbb{P}}-1 \}$
+- $\mathsf{vote}\_\mathsf{decision} ⦂ \{ 0 \ldots N_{\mathsf{opt}} - 1 \}$
+  — the voter's choice.
 - $\mathsf{share}\_\mathsf{index} \in \{0, 1, \ldots, N_s - 1\}$ — which share is being revealed.
 - $\mathsf{share}\_{\mathsf{comm}\_0} \ldots \mathsf{share}\_{\mathsf{comm}\_{N_s - 1}}$ —
   all $N_s$ blinded share commitments (to recompute
   $\mathsf{shares}\_\mathsf{hash}$).
 - $\mathsf{blind}$ — the blind factor for the revealed share
   (at position $\mathsf{share}\_\mathsf{index}$).
+- $C_1, C_2 ⦂ \mathbb{P}^*$ — the committed ciphertext of the revealed
+  share, $\mathsf{enc}\_{\mathsf{share}\_{\mathsf{share}\_\mathsf{index}}}$.
+- $\rho_0, \ldots, \rho_{N_{\mathsf{opt}} - 1}$ — padding randomness,
+  one Pallas scalar per option position, sampled uniformly at random.
 
 #### Conditions
 
@@ -1365,9 +1538,10 @@ that the VC is correctly constructed from its components:
 
 $$\mathsf{vc} = \mathsf{Poseidon}\bigl(\mathsf{DOMAIN}\_\mathsf{VC}, \mathsf{voting}\_{\mathsf{round}\_\mathsf{id}}, \mathsf{shares}\_\mathsf{hash}, \mathsf{proposal}\_\mathsf{id}, \mathsf{vote}\_\mathsf{decision}\bigr)$$
 
-This binds the public $\mathsf{proposal}\_\mathsf{id}$ and
+This binds the public $\mathsf{proposal}\_\mathsf{id}$ and the private
 $\mathsf{vote}\_\mathsf{decision}$ to the private VC, ensuring that the
-revealed share is attributed to the correct proposal and decision.
+revealed share is attributed to the correct proposal and, through
+condition 7, to the option the voter committed to.
 
 ##### Share Opening
 
@@ -1379,11 +1553,11 @@ $$\mathsf{shares}\_\mathsf{hash} = \mathsf{Poseidon}\bigl(\mathsf{share}\_{\math
 
 The recomputed $\mathsf{shares}\_\mathsf{hash}$ MUST equal the one inside
 the VC (via condition 2). The share commitments are blinded
-(see [Why Blinded Share Commitments]), so they do not reveal the
-ciphertexts or blind factors of other shares to the prover.
+(see [Why Blinded Share Commitments]), so a chain observer cannot
+recompute them from revealed ciphertexts.
 
 **Condition 4: Share membership.** The circuit MUST enforce that the
-commitment derived from the public ciphertext coordinates
+commitment derived from the witness ciphertext coordinates
 $C_{1,x}, C_{2,x}, C_{1,y}, C_{2,y}$ and the witness blind factor
 matches the share commitment at position
 $\mathsf{share}\_\mathsf{index}$:
@@ -1393,11 +1567,10 @@ $$\mathsf{Poseidon}\bigl(\mathsf{blind}_{\mathsf{share}\_\mathsf{index}}, C_{1,x
 The circuit MUST encode $\mathsf{share}\_\mathsf{index}$ as a one-hot
 selector vector over $N_s$ positions. The mux MUST extract the
 corresponding $\mathsf{share}\_\mathsf{comm}$ via a dot product and
-constrain equality with the commitment derived from the public
+constrain equality with the commitment derived from the witness
 ciphertext coordinates and the witness blind factor. Only the blind
 factor for the revealed share is needed; the remaining $N_s - 1$ share
-commitments used in condition 3 are opaque witnesses that do not expose
-their underlying ciphertexts or blind factors.
+commitments used in condition 3 are opaque witnesses.
 
 ##### Nullifier
 
@@ -1411,6 +1584,42 @@ where $\mathsf{tag}_{\mathsf{share}}$ is the field-element encoding of
 revealed share. The VC and blind are private, making the nullifier
 unlinkable to a specific VC without knowledge of these witnesses.
 
+##### Option Vector
+
+**Condition 6: Decision selector.** The circuit MUST derive a one-hot
+selector $s_0, \ldots, s_{N_{\mathsf{opt}} - 1}$ from the private
+decision and enforce:
+
+$$s_j \in \{0, 1\} \text{ for each } j, \qquad \sum_{j} s_j = 1, \qquad \sum_{j} j \cdot s_j = \mathsf{vote}\_\mathsf{decision}$$
+
+These constraints also bound $\mathsf{vote}\_\mathsf{decision}$ to
+$\{0 \ldots N_{\mathsf{opt}} - 1\}$; a VC whose decision lies outside
+that range cannot be opened.
+
+**Condition 7: Option vector integrity.** For each position
+$j \in \{0 \ldots N_{\mathsf{opt}} - 1\}$, the circuit MUST compute a
+padding ciphertext
+
+$$P_j = \bigl([\rho_j]\, G,\ [\rho_j]\, \mathsf{ea}\_\mathsf{pk}\bigr)$$
+
+which is an encryption of zero under $\mathsf{ea}\_\mathsf{pk}$ per
+[Encryption], and enforce coordinate-wise that
+
+$$E_j = s_j \cdot (C_1, C_2) + (1 - s_j) \cdot P_j$$
+
+That is, the public ciphertext at the decision position equals the
+committed share ciphertext, and the public ciphertext at every other
+position is a fresh encryption of zero. The circuit MUST compute $P_j$
+for every position, including the decision position where it is
+discarded, so that the circuit's structure does not depend on the
+decision. The circuit MUST constrain equality on both coordinates of
+each point.
+
+Each $\rho_j$ MUST be sampled independently. Reusing one scalar across
+positions would let an observer subtract two positions' second
+components and recover the share value by a bounded discrete logarithm;
+see [Why Decisions Are Encrypted at Reveal].
+
 #### Out-of-Circuit Verification
 
 A verifier that receives a Vote Reveal Proof $\pi$ MUST perform the
@@ -1419,18 +1628,27 @@ following checks:
 1. Verify $\pi$ against the public inputs.
 2. Verify that $\mathsf{share}\_\mathsf{nullifier}$ does not appear in the
    share nullifier set. If it does, reject as double-counting.
-3. Verify that $\mathsf{rt}^{\mathsf{vct}}$ matches a published VCT root.
-4. Verify that $\mathsf{proposal}\_\mathsf{id}$ is valid for the current round.
-5. Verify that $\mathsf{voting}\_{\mathsf{round}\_\mathsf{id}}$ matches an active round.
-6. Verify that $\mathsf{vote}\_\mathsf{decision}$ is a valid option for the
-   proposal identified by $\mathsf{proposal}\_\mathsf{id}$ in this round.
+3. Verify that $\mathsf{rt}^{\mathsf{vct}}$ equals the round's final
+   VCT root (see [Round Lifecycle]).
+4. Verify that $\mathsf{proposal}\_\mathsf{id}$ is valid for the round.
+5. Verify that $\mathsf{voting}\_{\mathsf{round}\_\mathsf{id}}$ matches a
+   round in the REVEALING state.
+6. Verify that $\mathsf{ea}\_\mathsf{pk}$ matches the round's election
+   authority public key.
 7. Add $\mathsf{share}\_\mathsf{nullifier}$ to the share nullifier set.
-8. Accumulate $\mathsf{enc}\_\mathsf{share}$ into the aggregate ciphertext for
-   $(\mathsf{proposal}\_\mathsf{id}, \mathsf{vote}\_\mathsf{decision})$:
+8. For each position $j \in \{0 \ldots N_{\mathsf{opt}} - 1\}$,
+   accumulate $E_j$ into the aggregate ciphertext for
+   $(\mathsf{proposal}\_\mathsf{id}, j)$:
 
-$$\mathsf{agg}[\mathsf{proposal}\_\mathsf{id}][\mathsf{vote}\_\mathsf{decision}] \mathrel{+}= \mathsf{enc}\_\mathsf{share}$$
+$$\mathsf{agg}[\mathsf{proposal}\_\mathsf{id}][j] \mathrel{+}= E_j$$
 
 where $+$ denotes component-wise Pallas point addition.
+
+The verifier does not learn, and does not check, which position carries
+the share's value. A share whose committed decision is at or beyond the
+proposal's option count is accumulated into a position that [Tally]
+never decrypts; it contributes to no option, and nothing in this
+protocol allows a misplaced share to alter another option's total.
 
 ### Share Reveal Message
 
@@ -1440,118 +1658,88 @@ A share reveal transaction submitted to the vote chain MUST contain:
 |---|---|---|
 | $\pi_{\text{reveal}}$ | Proof | The Vote Reveal Proof |
 | $\mathsf{share}\_\mathsf{nullifier}$ | Pallas scalar | Share nullifier |
-| $\mathsf{enc}\_\mathsf{share}$ | $(C_1, C_2)$ | El Gamal ciphertext (two Pallas points) |
+| $E_0, \ldots, E_{N_{\mathsf{opt}} - 1}$ | $N_{\mathsf{opt}} \times (E_1, E_2)$ | Option-vector ciphertexts (two Pallas points each) |
 | $\mathsf{proposal}\_\mathsf{id}$ | $\{1 \ldots 15\}$ | Proposal identifier |
-| $\mathsf{vote}\_\mathsf{decision}$ | Pallas scalar | Vote decision |
-| $\mathsf{rt}^{\mathsf{vct}}$ | Pallas scalar | VCT root |
+| $\mathsf{rt}^{\mathsf{vct}}$ | Pallas scalar | Final VCT root |
 | $\mathsf{voting}\_{\mathsf{round}\_\mathsf{id}}$ | Pallas scalar | Round identifier |
 
-Note: the Vote Reveal Proof has no spend authorization signature
-because it is constructed by the submission server, not the voter.
+A share reveal message carries no signature and names no submitter. The
+proof binds every field, so the message is valid regardless of who
+submits it, and a relay that submits it on the voter's behalf adds
+nothing to it and cannot alter it.
 
 ### Share Submission
 
-A share reaches the vote chain by one of two paths. **Direct submission
-is the default and RECOMMENDED path.** Server-assisted submission is an
-optional profile for clients that cannot construct proofs locally, and
-carries a privacy cost stated below.
+A share reveal message reaches the vote chain either directly from the
+voter's client or through a relay. In both cases the client constructs
+the Vote Reveal Proof; the difference is only who transmits the
+finished message and when.
 
-#### Direct Submission
+**Constructing the messages.** Once the round enters REVEALING, the
+client MUST obtain the round's final VCT root and a Merkle path for its
+VC against that root, construct the Vote Reveal Proof for each share
+$i \in \{0 \ldots N_s - 1\}$ per [Vote Reveal Proof], and assemble the
+$N_s$ share reveal messages. A client MUST NOT send any of the
+auxiliary inputs of the Vote Reveal Proof — the vote commitment, its
+VCT position or path, the shares hash, the share commitments, the blind
+factors or the committed ciphertexts — to any other party.
 
-A client that can construct a Vote Reveal Proof MUST be permitted to
-submit share reveal transactions itself, without sending any payload to
-a third party. In this path the client:
+**Independence of submissions.** Whether submitted directly or through
+relays, the $N_s$ messages of one vote MUST be submitted as if by $N_s$
+unrelated clients:
 
-1. Constructs the Vote Reveal Proof for each share $i$, per
-   [Vote Reveal Proof].
-2. Submits each resulting Share Reveal Message to the vote chain
-   directly, at a time of its choosing.
+1. Each message MUST be submitted over a network connection that shares
+   no identifying state with the connection used for any other message
+   of the same vote — for example, a separate Tor circuit or mixnet
+   channel per message. A client MUST NOT reuse a circuit, a source
+   address it controls the visibility of, or a session across two
+   messages of one vote.
+2. Each message MUST be submitted at a time drawn as specified in
+   [Submission Timing].
+3. A client MUST NOT submit two messages of one vote to the same relay,
+   and MUST NOT submit a message to a relay that has already received a
+   message of the same vote, including on retry.
 
-No party other than the client learns $\mathsf{vc}$, the VCT position,
-$\mathsf{shares}\_\mathsf{hash}$, or the association between any two
-shares. The correlation channel described under
-[Server-Assisted Submission] does not arise.
+**Direct submission.** The client submits each message itself, at its
+scheduled time, subject to the rules above. Direct submission requires
+the client to be online at each scheduled time.
 
-Clients SHOULD submit each share over an independent network path — for
-example, a separate Tor circuit per share — and SHOULD independently
-sample each share's submission time.
-See [Why Content Linkage Precedes Timing] for why these measures are
-effective on this path and not on the other.
+**Relayed submission.** A client that will not be online for the
+duration of its schedule MAY hand each message to a relay. For each
+message, the client sends the relay a payload consisting of the
+complete share reveal message and
+$\mathsf{submit}\_\mathsf{at}$, the Unix time (seconds) at which the
+relay is to submit it, with the value 0 meaning as soon as possible.
+The client MUST select a distinct relay for each message, independently
+and uniformly at random from the relays it is configured with, and MUST
+hand each payload over under rule 1 above. The client SHOULD hand the
+payloads to relays at independently drawn times rather than in one
+burst, and MUST NOT hand them over in share-index order.
 
-#### Server-Assisted Submission
+A relay receives only what the chain will record, and learns from the
+payload nothing that a chain observer would not; see
+[Privacy Implications]. It does learn the client's network origin as
+presented and the requested submission time, which is why each message
+goes to a different relay over a different path.
 
-A client that cannot construct proofs locally MAY delegate proof
-construction and submission to a submission server. For share $i$, the
-payload sent to the server MUST contain:
+**Retry.** A client SHOULD confirm that each of its messages has been
+included on the vote chain. A client that observes that a message has
+not appeared within a client-configured timeout MAY resubmit it, to a
+different relay or directly, under the rules above. Because a share
+nullifier is accepted once, a duplicate submission is rejected by the
+chain and is harmless. A client MUST NOT resubmit a message to a relay
+that has already received it or any other message of the same vote.
+Confirming inclusion by querying the chain for the client's own share
+nullifiers reveals which nullifiers are the client's; see
+[Open issues].
 
-| Field | Description |
-|---|---|
-| $\mathsf{vc}$ | The vote commitment |
-| VCT position | Position of $\mathsf{vc}$ in the VCT |
-| $\mathsf{shares}\_\mathsf{hash}$ | Hash of all blinded share commitments |
-| $\mathsf{proposal}\_\mathsf{id}$ | Proposal identifier |
-| $\mathsf{vote}\_\mathsf{decision}$ | Vote decision |
-| $\mathsf{share}\_\mathsf{index}$ | Which share to reveal (0-indexed) |
-| $\mathsf{enc}\_\mathsf{share}$ | El Gamal ciphertext $(C_1, C_2)$ for this share |
-| $\mathsf{blind}$ | Blind factor for this share |
-| $\mathsf{share}\_{\mathsf{comm}\_0} \ldots \mathsf{share}\_{\mathsf{comm}\_{N_s - 1}}$ | All $N_s$ blinded share commitments |
-| $\mathsf{submit}\_\mathsf{at}$ | Unix timestamp (seconds) at which the server should submit the share reveal transaction; 0 means immediate. See [Submission Timing] |
+**Relay interface.** The relay's service interface is out of scope for
+this ZIP. Whatever its form, a relay MUST accept a payload without
+authenticating the submitting client, MUST NOT require any identifier
+that persists across submissions, and MUST submit the message it was
+given unaltered.
 
-The server receives only the ciphertext and blind factor for the
-single share it is responsible for revealing. The remaining $N_s - 1$
-shares are sent to other servers, each of which receives only its own
-share's raw data. To recompute $\mathsf{shares}\_\mathsf{hash}$ in
-condition 3 of the Vote Reveal Proof, the server uses the blinded
-share commitments, which do not expose the ciphertexts or blind
-factors of the other shares (see
-[Why Other Shares' Ciphertexts Are Withheld]).
-
-**Privacy cost of this path.** Three fields of this payload —
-$\mathsf{vc}$, the VCT position, and $\mathsf{shares}\_\mathsf{hash}$ —
-take the same value in all $N_s$ payloads of one vote. A server that
-receives two or more of a voter's payloads can therefore group them
-with certainty, from the payload contents alone. The full array of
-$N_s$ blinded share commitments is a fourth such value. These fields
-are required for the server to construct the proof on the voter's
-behalf, so the correlation is inherent to delegating proof
-construction in this form, not an artifact of the encoding.
-
-A client using this path MUST be informed that the servers it selects
-learn which shares belong to the same vote, and learn that vote's
-$\mathsf{proposal}\_\mathsf{id}$ and
-$\mathsf{vote}\_\mathsf{decision}$.
-
-Implementations MUST NOT present randomized submission delays or
-per-share network isolation as mitigating this correlation. They do
-not: the correlating values travel in the payload regardless of when or
-over what path it is sent. See
-[Why Content Linkage Precedes Timing].
-
-#### Server Selection
-
-Server selection for the server-assisted path is specified here rather
-than in a companion document, because the rule determines whether the
-privacy properties claimed elsewhere in this ZIP hold.
-
-Let $s$ be the number of available submission servers.
-
-1. A client MUST send each share to exactly one submission server on
-   first attempt.
-2. A client MUST NOT send more than
-   $\lceil N_s / s \rceil$ of one vote's shares to any single server.
-3. A client MUST select servers independently and uniformly at random
-   subject to constraints 1 and 2.
-4. If a share has not appeared on the vote chain within a
-   client-configured timeout, the client MAY resubmit it to a different
-   server, chosen subject to the same constraints. A client MUST NOT
-   resubmit a share to a server that has already received it.
-
-Earlier drafts of this protocol required each share to be sent to
-$\lceil s/2 \rceil$ servers, for censorship resistance through
-redundancy. That rule is replaced. See
-[Why One Server Per Share, Not Half the Fleet].
-
-#### Submission Timing
+### Submission Timing
 
 Share submission follows the scheduling discipline that ZIP 318
 [^zip-0318] specifies for pool-crossing transfers. The two problems are
@@ -1562,11 +1750,12 @@ decomposition, randomized ordering, and memoryless inter-arrival
 delays. [Vote Share] already supplies the first. This section supplies
 the other two.
 
-Let $T_{\mathsf{end}}$ be the round's $\mathsf{vote}\_\mathsf{end}\_
-\mathsf{time}$, let $T_0$ be the time at which the client commits a
-schedule, and let $W = T_{\mathsf{end}} - T_0 - \Delta$, where
-$\Delta$ is a deployment-specified safety margin covering proof
-construction and inclusion (see [Deployment]).
+Let $T_{\mathsf{end}}$ be the round's
+$\mathsf{reveal}\_\mathsf{end}\_\mathsf{time}$, let $T_0$ be the time
+at which the client commits a schedule, which is no earlier than the
+start of the reveal window, and let $W = T_{\mathsf{end}} - T_0 -
+\Delta$, where $\Delta$ is a deployment-specified safety margin
+covering inclusion (see [Deployment]).
 
 A client constructing a submission schedule:
 
@@ -1588,6 +1777,11 @@ A client constructing a submission schedule:
 5. MUST draw all randomness used in the shuffle and the delays from a
    cryptographically secure random number generator.
 
+On the relayed path, the drawn times are the
+$\mathsf{submit}\_\mathsf{at}$ values handed to the relays. The
+schedule protects the on-chain footprint and the relays' view alike,
+because no relay holds more than one message of a vote.
+
 **When the window is short.** If the accumulated schedule would place
 any share after $T_{\mathsf{end}} - \Delta$, the client MUST compress
 the schedule by drawing each remaining share's submission time
@@ -1606,56 +1800,53 @@ client that reacts to a closing window by sending everything at once
 reproduces, through timing, the exposure that
 [Why There Is No Single-Share Mode] removes from the payload.
 
-On the server-assisted path, a client MAY specify
-$\mathsf{submit}\_\mathsf{at}$ per share, and the schedule above
-applies to those values. Implementations MUST NOT represent this as a
-privacy measure against the receiving server; it affects only the
-on-chain footprint. See [Why Content Linkage Precedes Timing].
-
 There is no single-share submission mode. Earlier drafts specified that
 a voter casting within a final window place their entire ballot count
-into one share, submitted immediately, on the grounds that a server
-might not complete $N_s$ proofs before the deadline. A client MUST NOT
-do this: it concentrates the voter's entire weight into one ciphertext,
-so a single decryption recovers it exactly. A client with insufficient
-time remaining for server-assisted submission MUST submit directly
-instead, which requires under a second of proof construction. See
+into one share, submitted immediately. A client MUST NOT do this: it
+concentrates the voter's entire weight into one ciphertext, so a single
+decryption recovers it exactly. See
 [Why There Is No Single-Share Mode].
 
 
 ## Tally
 
-After the voting window closes, each per-$(\mathsf{proposal}\_\mathsf{id},
-\mathsf{vote}\_\mathsf{decision})$ aggregate ciphertext is decrypted by a
-threshold procedure. No party reconstructs
-$\mathsf{ea}\_\mathsf{sk}$ at any point.
+After the reveal window closes, each per-$(\mathsf{proposal}\_\mathsf{id},
+j)$ aggregate ciphertext, for each option position $j$ below the
+proposal's option count, is decrypted by a threshold procedure. No
+party reconstructs $\mathsf{ea}\_\mathsf{sk}$ at any point.
 
-Let $t$ be the round's decryption threshold and let each key-share
-holder $i$ hold a Shamir share [^shamir] $f(i)$ of
-$\mathsf{ea}\_\mathsf{sk}$, with published verification key
-$\mathsf{VK}_i = [f(i)]\, G$. The generation and distribution of these
-shares, the value of $t$, and the identity of the holders are specified
-in `draft-valargroup-shielded-voting-setup` [^voting-setup].
+Let $t$ be the round's decryption threshold, let $\mathsf{QUAL}$ be
+the round's key-share holder set, and let each holder
+$i \in \mathsf{QUAL}$ hold the share $\mathsf{sk}_i$ of
+$\mathsf{ea}\_\mathsf{sk}$, with public verification key
+$\mathsf{VK}_i = [\mathsf{sk}_i]\, G$, as produced by
+[Election Authority Key Ceremony]. The shares are Shamir shares
+[^shamir] on a polynomial of degree $t - 1$, so any $t$ of them suffice.
 
 ### Aggregation
 
-For each $(\mathsf{proposal}\_\mathsf{id},
-\mathsf{vote}\_\mathsf{decision})$ pair, the aggregate ciphertext
-$(C_{1,\mathsf{agg}}, C_{2,\mathsf{agg}})$ is the component-wise sum of
-every revealed share ciphertext accepted for that pair, per
-[Additive Homomorphism]. Aggregation is publicly verifiable: anyone
-holding the chain's share reveal transactions can replay it.
+For each $(\mathsf{proposal}\_\mathsf{id}, j)$ pair, the aggregate
+ciphertext $(C_{1,\mathsf{agg}}, C_{2,\mathsf{agg}})$ is the
+component-wise sum of the position-$j$ ciphertext of every share reveal
+accepted for that proposal, per [Additive Homomorphism]. Aggregation is
+publicly verifiable: anyone holding the chain's share reveal
+transactions can replay it.
+
+Positions at or beyond the proposal's option count accumulate the
+padding ciphertexts of every reveal and the committed ciphertext of any
+share whose decision was out of range. They MUST NOT be decrypted and
+are not part of the tally.
 
 ### Partial Decryption
 
 At least $t$ key-share holders each publish a partial decryption
 
-$$D_i = [f(i)]\, C_{1,\mathsf{agg}}$$
+$$D_i = [\mathsf{sk}_i]\, C_{1,\mathsf{agg}}$$
 
 Each $D_i$ MUST be accompanied by a Chaum-Pedersen DLEQ proof, as
 specified in [Chaum-Pedersen DLEQ Proofs], instantiated with
 $P = \mathsf{VK}_i$, $H = C_{1,\mathsf{agg}}$, $Q = D_i$ and witness
-$x = f(i)$. The proof demonstrates
+$x = \mathsf{sk}_i$. The proof demonstrates
 $\log_G(\mathsf{VK}_i) = \log_{C_{1,\mathsf{agg}}}(D_i)$, establishing
 that the share behind the holder's published verification key is the
 share used to compute $D_i$.
@@ -1683,9 +1874,8 @@ from which the aggregate plaintext follows by [Decryption]:
 $$[\mathsf{total}\_\mathsf{value}]\, G = C_{2,\mathsf{agg}} - [\mathsf{ea}\_\mathsf{sk}]\, C_{1,\mathsf{agg}}$$
 
 $\mathsf{total}\_\mathsf{value}$ is then recovered by baby-step giant-step
-and published for that $(\mathsf{proposal}\_\mathsf{id},
-\mathsf{vote}\_\mathsf{decision})$ pair, in the units specified in
-[Tally units].
+and published for that $(\mathsf{proposal}\_\mathsf{id}, j)$ pair as
+the total for option $j$, in the units specified in [Tally units].
 
 Only the aggregate is decrypted. No step of this procedure reveals an
 individual vote amount — but see [Privacy Implications] for what a
@@ -1718,7 +1908,8 @@ Each proposal has:
 
 - A **title**, short and human-readable.
 - An optional **description** providing additional context.
-- Between 2 and 8 **options**, each carrying a human-readable label.
+- Between 2 and $N_{\mathsf{opt}} = 8$ **options**, each carrying a
+  human-readable label.
   Option labels MUST be non-empty ASCII strings.
 
 Proposals in a voting round are assigned 1-indexed sequential
@@ -1729,9 +1920,10 @@ sequential indices.
 
 A **decision** is a voter's chosen option for a specific proposal,
 represented as the option's 0-indexed position within that proposal's
-option list. Decisions are recorded in the encrypted share
-accumulator, keyed by `(proposal_id, vote_decision)`; see [Vote Chain]
-for the accumulator and [Vote Share] for the construction.
+option list. A decision is never published; each share reveal carries
+one ciphertext per option position, and the encrypted share accumulator
+is keyed by `(proposal_id, option position)`. See [Vote Chain] for the
+accumulator and [Vote Reveal Proof] for the construction.
 
 #### Kinds of polls that can be expressed
 
@@ -1761,11 +1953,10 @@ rounds or expressed through an external layer.
 A voting round is anchored to a Zcash mainnet snapshot: a single
 mainnet block, identified by both its height $H$ (the snapshot height)
 and its hash $\mathsf{snapshot}\_\mathsf{blockhash}$, at which the
-eligible Orchard pool is captured. The poll runner chooses the block
+eligible Ironwood pool is captured. The poll runner chooses the block
 subject to the following constraints:
 
-- $H$ MUST be at or after NU5 activation, since the protocol requires
-  Orchard.
+- $H$ MUST be at or after the activation of the Ironwood pool.
 - When the round is created (see [Poll Creation]), $H$ MUST be at
   least $\mathsf{min}\_\mathsf{confirmations}$ blocks below the tip of
   the Zcash mainnet best chain, where
@@ -1788,8 +1979,8 @@ Choosing the snapshot is the start of round setup, not a single
 automatic action. The poll runner is responsible for the following
 coordinated activities:
 
-1. **Determine the snapshot roots.** The Orchard note commitment tree
-   root ($\mathsf{nc}\_\mathsf{root}$) and the nullifier non-membership
+1. **Determine the snapshot roots.** The Ironwood pool note commitment
+   tree root ($\mathsf{nc}\_\mathsf{root}$) and the nullifier non-membership
    tree root ($\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$) are
    the two roots $\mathsf{rt^{cm}}$ and $\mathsf{rt^{excl}}$ of the pool
    snapshot at height $H$, as defined in the "Pool Snapshot" section of
@@ -1829,13 +2020,13 @@ Zcash chain or from its leaves.
 1. Confirm that the block at height $H$ on the node's best chain has
    hash $\mathsf{snapshot}\_\mathsf{blockhash}$. If it does not, the
    round is not well formed.
-2. Obtain $\mathsf{nc}\_\mathsf{root}$: the Orchard note commitment
-   tree root as of the end of block $H$. This is Zcash consensus data.
-   A node computes it while validating the chain and exposes it as the
-   Orchard anchor at that height.
+2. Obtain $\mathsf{nc}\_\mathsf{root}$: the Ironwood pool note
+   commitment tree root as of the end of block $H$. This is Zcash
+   consensus data. A node computes it while validating the chain and
+   exposes it as the pool's anchor at that height.
 3. Obtain $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$: the root
-   of the nullifier non-membership tree over every Orchard nullifier
-   revealed at or before $H$, constructed as specified in
+   of the nullifier non-membership tree over every Ironwood pool
+   nullifier revealed at or before $H$, constructed as specified in
    `draft-valargroup-orchard-balance-proof` [^balance-proof].
    Zcash consensus does not commit to this tree; a node maintains it as
    an index over the nullifier set it already tracks, and serves its
@@ -1865,7 +2056,7 @@ $(H, \mathsf{snapshot}\_\mathsf{blockhash})$ from independent nodes MUST
 treat the round as not well formed until the discrepancy is resolved.
 
 The served root is correct only if the tree behind it covers every
-Orchard nullifier revealed at or before $H$ and nothing else. A node
+Ironwood pool nullifier revealed at or before $H$ and nothing else. A node
 maintaining that index incrementally MUST:
 
 - track the block hash at which each nullifier entered the index, not
@@ -1890,15 +2081,17 @@ a transaction carrying the client-supplied subset of the `VoteRound`
 structure specified in `draft-valargroup-shielded-voting-wallet-api`
 [^wallet-api]. The vote manager supplies `snapshot_height`,
 `snapshot_blockhash`, `proposals_hash`, `vote_end_time`,
-`nullifier_imt_root`, `nc_root`, `proposals`, `title`, and
+`reveal_end_time`, `nullifier_imt_root`, `nc_root`, `proposals`,
+`title`, and
 `description`; the transaction's signer becomes the `creator` field
 of the resulting `VoteRound`. The chain derives the remaining
 fields (`vote_round_id`, `status`, `ea_pk`, `created_at_height`)
 at inclusion or during the round lifecycle.
 
 The chain rejects the transaction if the signer is not the current
-vote manager, or if the `proposals` field violates the constraints
-in [Proposals and Decisions].
+vote manager, if the `proposals` field violates the constraints
+in [Proposals and Decisions], or if `reveal_end_time` is not later
+than `vote_end_time` by at least $2\Delta$ (see [Round Lifecycle]).
 
 The vote chain derives the 32-byte `vote_round_id` from the
 transaction fields after inclusion, using the Poseidon construction
@@ -1906,17 +2099,18 @@ specified in [Voting Round Identifier]. The result is a Pallas field element
 so that the round ID can enter ZKP circuits as a public input.
 
 The round enters the **PENDING** state. The EA key ceremony (see
-[Election Authority Key Ceremony]) runs automatically. Once it completes and at least $t$
-key-share holders have
-ratified the round (see [Ratification]), the round transitions to
-**ACTIVE**, the voting window opens, and the transition timestamp is
-recorded as `ceremony_phase_start`. Clients use
-`ceremony_phase_start` together with `vote_end_time` to construct their
-share submission schedule, as specified in [Submission Timing].
-There is no last-moment buffer: the single-share mode that earlier
-drafts defined for the end of the voting window has been removed, and a
-client near the deadline compresses its schedule rather than
-concentrating its weight.
+[Election Authority Key Ceremony]) runs automatically. Once it
+completes and at least $t$ key-share holders have ratified the round
+(see [Ratification]), the round transitions to **ACTIVE**, the voting
+window opens, and the transition timestamp is recorded as
+`ceremony_phase_start`. The round transitions to **REVEALING** at
+`vote_end_time` and to **TALLYING** at `reveal_end_time` (see
+[Round Lifecycle]). Clients construct their share submission schedule
+within the reveal window, as specified in [Submission Timing]. There
+is no last-moment buffer: the single-share mode that earlier drafts
+defined for the end of the voting window has been removed, and a client
+near the deadline compresses its schedule rather than concentrating its
+weight.
 
 ### Round Attestation
 
@@ -1931,7 +2125,7 @@ order, of:
 
 | Component | Width |
 |---|---|
-| The ASCII string `ZcashVotingRoundAttestation:v2` | 30 bytes |
+| The ASCII string `ZcashVotingRoundAttestation:v3` | 30 bytes |
 | `vote_round_id` | 32 bytes |
 | `snapshot_height`, big-endian unsigned | 4 bytes |
 | `snapshot_blockhash` | 32 bytes |
@@ -1939,6 +2133,7 @@ order, of:
 | `nullifier_imt_root` | 32 bytes |
 | `proposals_hash` | 32 bytes |
 | `vote_end_time`, big-endian unsigned | 8 bytes |
+| `reveal_end_time`, big-endian unsigned | 8 bytes |
 | `ea_pk` | 32 bytes |
 | `min_confirmations`, big-endian unsigned | 4 bytes |
 
@@ -1960,102 +2155,178 @@ parties received the same input, not that the input is correct. See
 
 1. **PENDING**: round created, awaiting the EA key ceremony and its
    ratification by key-share holders (see [Ratification]).
-2. **ACTIVE**: ceremony complete and round ratified, voting window
-   open. Voters may delegate, vote, and submit shares (see
+2. **ACTIVE**: ceremony complete and round ratified; the voting window
+   is open. The chain accepts delegation and vote transactions for the
+   round and rejects share reveal transactions.
+3. **REVEALING**: `vote_end_time` has passed; the reveal window is
+   open. On entering this state the chain MUST record the VCT root as
+   the round's **final VCT root**, and MUST thereafter reject delegation
+   and vote transactions for the round, so that the VCT does not change.
+   The chain accepts share reveal transactions anchored to the final
+   root (see [Vote Reveal Proof]). Voters construct and submit their
+   share reveal messages (see [Share Submission] and
    [Submission Timing]).
-3. **TALLYING**: `vote_end_time` has passed. Validators submit
+4. **TALLYING**: `reveal_end_time` has passed. Key-share holders submit
    partial decryptions, the chain combines them, and tally
    decryption runs automatically (see [Tally]). The
    chain enforces a bounded timeout on the TALLYING state: if a
    tally is not submitted within this timeout, the round
    auto-finalizes with no tally, preserving liveness.
-4. **FINALIZED**: tally published and verifiable. A round that
+5. **FINALIZED**: tally published and verifiable. A round that
    auto-finalized due to a TALLYING timeout publishes no tally.
+
+`reveal_end_time` MUST be later than `vote_end_time` by at least
+$2\Delta$ (see [Deployment]). A deployment MUST publish the reveal
+window length it uses, and SHOULD choose one long enough that a voter
+who opens their wallet at ordinary intervals does so at least once
+within it; see [Why a Separate Reveal Window].
 
 ### Election Authority Key Ceremony
 
 Each round uses a fresh election authority keypair
 $(\mathsf{ea}\_\mathsf{sk}, \mathsf{ea}\_\mathsf{pk})$. The ceremony
-that produces it runs automatically when the round enters PENDING.
+that produces it is a distributed key generation (DKG) among the
+round's key-share holders, run over the vote chain, which serves as
+the ceremony's authenticated broadcast channel. It runs automatically
+when the round enters PENDING. The construction is Pedersen's DKG
+[^pedersen-dkg] with Feldman verifiable secret sharing [^feldman] and
+a proof of knowledge of each contribution, in the form analysed in
+[^gjkr] and adopted by FROST [^frost].
 
-Scoping the key to one round bounds the damage from a key compromise to
-that round, and means a key-share holder that leaves the validator set
-cannot decrypt later rounds. The cryptographic constructions used below are
-specified in [El Gamal Encryption on Pallas], [ECIES on Pallas] and
+No party holds $\mathsf{ea}\_\mathsf{sk}$ at any point. Each holder
+contributes a random polynomial; the key is the sum of the constant
+terms, and each holder's share is the sum of the other holders'
+evaluations at its index. Scoping the key to one round bounds the
+damage from a share compromise to that round, and means a holder that
+leaves the set cannot decrypt later rounds. The cryptographic
+constructions used below are specified in
+[El Gamal Encryption on Pallas], [ECIES on Pallas] and
 [Chaum-Pedersen DLEQ Proofs].
 
-**Eligibility.** Every validator holding a registered Pallas public key
-at the time of round creation is eligible. Registration is bound at
-validator creation, as specified in the "Onboarding Validators" section
-of `draft-valargroup-shielded-voting-setup` [^voting-setup]; a
-validator without a registered Pallas key is bonded for consensus but
-takes no part in the ceremony. See [Open issues]: this eligibility rule
-is inherited from the ceremony's original design and conflicts with the
-role separation that document requires.
+**Participants.** The round's key-share holders are the parties
+registered as such for the round, each with a registered Pallas public
+key for receiving encrypted shares. Let $n$ be their number and index
+them $1, \ldots, n$. The round's decryption threshold is
+$t = \lceil n/2 \rceil + 1$, with a minimum of 2. How holders are
+admitted and how they register keys is specified in
+`draft-valargroup-shielded-voting-setup` [^voting-setup]; see
+[Open issues] for what that document does not yet specify. A key-share
+holder MUST NOT be a validator of the same round.
 
-**Dealer selection.** The next block proposer acts as dealer.
+**Round 1: commitment.** Each holder $i$:
 
-**Key generation and distribution.** Let $n$ be the number of eligible
-validators and let $t = \lceil n/2 \rceil + 1$, with a minimum of 2, be
-the round's decryption threshold. The dealer:
+1. Samples $t$ coefficients $a_{i,0}, \ldots, a_{i,t-1}$ uniformly at
+   random from the Pallas scalar field, defining
+   $f_i(x) = \sum_{k=0}^{t-1} a_{i,k}\, x^k$.
+2. Computes the Feldman commitments $A_{i,k} = [a_{i,k}]\, G$ for
+   $k = 0, \ldots, t-1$.
+3. Computes a Schnorr proof of knowledge of $a_{i,0}$: samples $k_i$
+   at random, sets $R_i = [k_i]\, G$,
+   $c_i = \mathsf{BLAKE2b\text{-}256}(\texttt{"svote-dkg-pok-v1"} \mathbin\| \mathsf{vote}\_\mathsf{round}\_\mathsf{id} \mathbin\| i \mathbin\| A_{i,0} \mathbin\| R_i)$
+   reduced to a Pallas scalar, and $\mu_i = k_i + c_i \cdot a_{i,0}$.
+4. Publishes to the chain, in a ceremony transaction: $A_{i,0}, \ldots,
+   A_{i,t-1}$ and $(R_i, \mu_i)$.
 
-1. Samples $\mathsf{ea}\_\mathsf{sk}$ uniformly at random and computes
-   $\mathsf{ea}\_\mathsf{pk}$.
-2. Constructs a random polynomial $f$ of degree $t - 1$ over the Pallas
-   scalar field with $f(0) = \mathsf{ea}\_\mathsf{sk}$.
-3. Evaluates $f(i)$ for $i = 1, \ldots, n$ to produce one Shamir share
-   per eligible validator.
-4. Encrypts each share $f(i)$ to that validator's registered Pallas key
-   using ECIES, with a fresh ephemeral scalar per recipient.
-5. Publishes to the chain: $\mathsf{ea}\_\mathsf{pk}$, the threshold
-   $t$, every encrypted share, and every verification key
-   $\mathsf{VK}_i = [f(i)]\, G$.
-6. Securely erases $\mathsf{ea}\_\mathsf{sk}$, the polynomial
-   coefficients, and every share value.
+The chain MUST reject a Round 1 transaction whose proof of knowledge
+does not verify, that is, unless
+$[\mu_i]\, G = R_i + [c_i]\, A_{i,0}$. The proof of knowledge prevents
+a holder from choosing its commitment as a function of others' and so
+biasing or cancelling the key; see [Why Distributed Key Generation].
 
-Step 6 is not verifiable by any other party.
-[Election Authority Key Custody] states what follows from that, and
-what a deployment MUST do about it.
+Round 1 closes when every holder has published or the commitment
+timeout has elapsed. Let $\mathcal{C}$ be the set of holders that
+published a valid Round 1 transaction. If $|\mathcal{C}| < t$, the
+ceremony fails and restarts.
 
-**Acknowledgement.** Each eligible validator decrypts its share,
-verifies that $[f(i)]\, G$ equals the published $\mathsf{VK}_i$,
-stores the share, and submits an acknowledgement transaction carrying
+**Round 2: dealing.** Each holder $i \in \mathcal{C}$ computes
+$f_i(j)$ for every $j \in \mathcal{C}$, $j \neq i$, encrypts each to
+holder $j$'s registered Pallas key using ECIES with a fresh ephemeral
+scalar per recipient, and publishes the encrypted shares to the chain
+in a ceremony transaction. A holder MUST then erase
+$a_{i,1}, \ldots, a_{i,t-1}$ and every $f_i(j)$ for $j \neq i$,
+retaining only $f_i(i)$. Round 2 closes when every holder in
+$\mathcal{C}$ has published or the dealing timeout has elapsed.
 
-$$\mathsf{SHA256}\bigl(\texttt{"ack"} \mathbin\| \mathsf{vote}\_\mathsf{round}\_\mathsf{id} \mathbin\| \mathsf{ea}\_\mathsf{pk} \mathbin\| \mathsf{validator}\_\mathsf{address}\bigr)$$
+**Round 3: verification and complaints.** Each holder $j$ decrypts
+each share $f_i(j)$ addressed to it and checks it against holder
+$i$'s commitments:
 
-A validator MUST NOT acknowledge a share that fails the verification
-key check. Committing to $\mathsf{ea}\_\mathsf{pk}$ keeps an
+$$[f_i(j)]\, G = \sum_{k=0}^{t-1} [j^k]\, A_{i,k}$$
+
+If the check fails for some $i$, or holder $i$ published no share for
+$j$, holder $j$ publishes a complaint against $i$ within the complaint
+window. A holder $i$ that receives a complaint from $j$ MUST respond,
+within the same window, by publishing $f_i(j)$ in the clear. The chain
+MUST verify the published value against $A_{i,\cdot}$ by the equation
+above. Holder $i$ is **disqualified** if it fails to publish a Round 2
+transaction, fails to respond to a complaint, or responds with a value
+that fails verification. A holder whose response verifies is not
+disqualified, and the complaining holder uses the published value as
+its share from $i$.
+
+Let $\mathsf{QUAL} \subseteq \mathcal{C}$ be the holders not
+disqualified. If $|\mathsf{QUAL}| < t$, the ceremony fails and
+restarts. $\mathsf{QUAL}$ is the round's key-share holder set; a
+holder outside it holds no share of the round's key and MUST NOT take
+part in the tally.
+
+**Key derivation.** On the close of Round 3 the chain computes and
+records:
+
+$$\mathsf{ea}\_\mathsf{pk} = \sum_{i \in \mathsf{QUAL}} A_{i,0}$$
+
+$$\mathsf{VK}_j = \sum_{i \in \mathsf{QUAL}} \sum_{k=0}^{t-1} [j^k]\, A_{i,k} \quad \text{for each } j \in \mathsf{QUAL}$$
+
+Each holder $j \in \mathsf{QUAL}$ computes its share
+
+$$\mathsf{sk}_j = \sum_{i \in \mathsf{QUAL}} f_i(j)$$
+
+and MUST verify that $[\mathsf{sk}_j]\, G = \mathsf{VK}_j$ before
+acknowledging. The shares $\mathsf{sk}_j$ are Shamir shares [^shamir]
+of $\mathsf{ea}\_\mathsf{sk} = \sum_{i \in \mathsf{QUAL}} a_{i,0}$ on
+the degree-$(t-1)$ polynomial $\sum_{i \in \mathsf{QUAL}} f_i$, so
+[Tally] applies to them unchanged. Every $\mathsf{VK}_j$ is computed
+from published values and can be recomputed by any party.
+
+**Acknowledgement.** Each holder $j \in \mathsf{QUAL}$ that has
+verified its share submits an acknowledgement transaction carrying
+
+$$\mathsf{SHA256}\bigl(\texttt{"ack"} \mathbin\| \mathsf{vote}\_\mathsf{round}\_\mathsf{id} \mathbin\| \mathsf{ea}\_\mathsf{pk} \mathbin\| \mathsf{holder}\_\mathsf{address}\bigr)$$
+
+A holder MUST NOT acknowledge a share that fails the verification key
+check. Committing to $\mathsf{ea}\_\mathsf{pk}$ keeps an
 acknowledgement from carrying over to a round rekeyed after the fact;
 committing to `vote_round_id` keeps it from carrying over to another
 round under the same key. This acknowledgement is also the holder's
 ratification of the round; see [Ratification].
 
-**Confirmation.** The ceremony confirms when every eligible validator
-has acknowledged, or, after the acknowledgement timeout, when at least
-$t$ have. Validators that did not acknowledge are dropped from the
-round and increment a consecutive-miss counter; after three consecutive
-misses a validator MUST be jailed, which removes it from the active set
-without burning bonded value. Ceremony non-participation is a liveness
-failure, not a safety violation, which is why it is penalised by
-jailing rather than by slashing.
-
-If fewer than $t$ eligible validators acknowledge within the timeout,
-the ceremony resets and a new dealer is selected.
+**Confirmation.** The ceremony confirms when every holder in
+$\mathsf{QUAL}$ has acknowledged, or, after the acknowledgement
+timeout, when at least $t$ have. Holders in $\mathsf{QUAL}$ that did
+not acknowledge retain a valid share and MAY still take part in the
+tally, but have not ratified the round. If fewer than $t$ acknowledge
+within the timeout, the ceremony fails and restarts.
 
 Requiring $t$ acknowledgements before confirmation is deliberate: the
 number of acknowledgements required to confirm is the same $t$ used for
 threshold decryption. Were confirmation to require fewer, a round could
 open that could never be tallied.
 
-**Validator set changes.** A validator joining during an active round
-receives no share for that round and MUST wait for the round to
-complete. A validator leaving retains its share and cannot be compelled
-to delete it; per-round keys bound what that share is worth, since it
-opens nothing in any other round.
+**Failure and restart.** A ceremony that fails restarts from Round 1
+with fresh randomness. Holders that caused a failure by not
+participating are excluded from the restarted ceremony. A deployment
+SHOULD publish each holder's participation record; how persistent
+non-participation is treated is an operational matter specified in
+`draft-valargroup-shielded-voting-setup` [^voting-setup].
 
-**Timing parameters.** A deployment MUST publish the ceremony deal
-timeout and the acknowledgement timeout it applies, and the
-consecutive-miss count at which a validator is jailed.
+**Holder set changes.** A party joining the holder set during a round
+receives no share for that round and waits for the next. A holder
+leaving retains its share and cannot be compelled to delete it;
+per-round keys bound what that share is worth, since it opens nothing
+in any other round.
+
+**Timing parameters.** A deployment MUST publish the commitment,
+dealing, complaint and acknowledgement timeouts it applies.
 
 ### Ratification
 
@@ -2090,29 +2361,28 @@ ratified is visibly departing from a published statement. See
 
 ### Election Authority Key Custody
 
-**Share generation.** A ceremony that generates the key at a single
-party and distributes shares from it — a trusted dealer, as specified
-in [Election Authority Key Ceremony] — gives that party
-the full Election Authority private key for the duration of the
-ceremony. The claim that no single party holds it holds only after the
-ceremony completes, and only if the dealer destroyed its copy, which no
-other party can verify. A deployment using a trusted dealer MUST
-identify the party that acted as dealer for each round, and SHOULD adopt
-distributed key generation, or publish verifiable secret sharing
-commitments, so that key-share holders can confirm their shares are
-consistent with $\mathsf{ea}\_\mathsf{pk}$ without trusting the dealer.
+**Share generation.** The ceremony in [Election Authority Key Ceremony]
+generates the key in distributed form: no party ever holds
+$\mathsf{ea}\_\mathsf{sk}$, and every holder can verify its own share
+against published commitments without trusting any other participant.
+The claim that no single party holds the key therefore rests on the
+ceremony's construction rather than on any party's promise to erase
+anything. What each holder MUST erase is its own polynomial's
+non-constant coefficients and the shares it dealt to others, as
+specified in Round 2; retaining them does not expose the key, but does
+expose other holders' shares from that dealer.
 
 **Retention.** Each key-share holder MUST destroy its share once the
 round is finalized and its tally published, and a deployment MUST
 publish the retention period it applies. The encrypted shares of every
 individual vote remain on the vote chain permanently, and their
 encryption is not post-quantum, so retained shares are a live capability
-against a permanent record of individual voters' balances, not a dormant
-convenience. Retention is not needed for audit: the partial decryptions
-and their DLEQ proofs are published on chain and can be re-verified at
-any time without the key. A deployment that retains shares nonetheless
-MUST state for how long, and MUST treat that period as the period over
-which its amount-privacy claims hold.
+against a permanent record of individual voters' share values, not a
+dormant convenience. Retention is not needed for audit: the partial
+decryptions and their DLEQ proofs are published on chain and can be
+re-verified at any time without the key. A deployment that retains
+shares nonetheless MUST state for how long, and MUST treat that period
+as the period over which its amount-privacy claims hold.
 
 
 ## Vote Chain
@@ -2121,9 +2391,12 @@ The vote chain MUST maintain the following state per voting round:
 
 - The **Vote Commitment Tree** as defined in [Vote Commitment Tree].
 - Three disjoint **nullifier sets** as defined in [Nullifier Sets].
-- A **per-$(\mathsf{proposal}\_\mathsf{id}, \mathsf{vote}\_\mathsf{decision})$
-  encrypted share accumulator**: the running component-wise sum of
-  revealed El Gamal ciphertexts.
+- A **per-$(\mathsf{proposal}\_\mathsf{id}, j)$ encrypted share
+  accumulator** for each option position
+  $j \in \{0 \ldots N_{\mathsf{opt}} - 1\}$: the running component-wise
+  sum of the position-$j$ ciphertexts of revealed shares.
+- The round's **final VCT root**, recorded on entering REVEALING (see
+  [Round Lifecycle]).
 
 For each transaction type, the vote chain MUST verify the
 corresponding proof and perform the out-of-circuit checks specified in
@@ -2141,13 +2414,22 @@ transactions enter blocks. This section states the consequences for a
 voting round, which are not otherwise recorded in this or any companion
 specification.
 
+**Admission by state.** The chain MUST accept delegation and vote
+transactions for a round only while the round is ACTIVE, share reveal
+transactions only while it is REVEALING, and partial decryptions only
+while it is TALLYING; see [Round Lifecycle].
+
 **What validators can do.** Validators controlling enough stake to
 control block production can decline to include share reveal
-transactions. Because $\mathsf{vote}\_\mathsf{decision}$ appears in
-cleartext in every share reveal transaction, and running per-option
-counts are public while a round is open, selecting which transactions
-to exclude according to the option they support requires no decryption,
-no key material, and no cooperation from any other party.
+transactions. A share reveal exposes its proposal identifier but not
+its decision (see [Vote Reveal Proof]), and per-option totals are not
+public while a round is open, so validators acting alone cannot select
+reveals to exclude by the option they support. They can exclude reveals
+by proposal, by time of arrival, by network origin, or wholesale. A
+coalition of validators and $t$ key-share holders could decrypt reveals
+as they arrive and exclude by option; the requirement that the two sets
+be disjoint (see [Election Authority Key Ceremony]) exists to keep that
+coalition from being a single organisation.
 
 **What validators cannot do.** They cannot create votes, alter the
 weight of an included vote, or misreport the tally: each is prevented
@@ -2202,7 +2484,7 @@ The following table lists every Poseidon call site in this protocol:
 
 | Hash | Inputs ($L$) | Mode | Permutations |
 |---|---|---|---|
-| Voting round identifier | 8 | $\mathsf{ConstantLength}\langle 8 \rangle$ | 4 |
+| Voting round identifier | 9 | $\mathsf{ConstantLength}\langle 9 \rangle$ | 5 |
 | VAN core | 6 | $\mathsf{ConstantLength}\langle 6 \rangle$ | 3 |
 | VAN blinding | 2 | $\mathsf{ConstantLength}\langle 2 \rangle$ | 1 |
 | VAN nullifier | 4 | $\mathsf{ConstantLength}\langle 4 \rangle$ | 2 |
@@ -2240,8 +2522,7 @@ following. They are ordered so that each step presupposes the ones
 above it.
 
 1. **Round configuration.** The round's snapshot roots are correct, as
-   established by the procedure in the "Snapshot Derivation" section
-   of `draft-valargroup-shielded-voting-setup` [^voting-setup]. This is
+   established by the procedure in [Snapshot Derivation]. This is
    not verifiable from vote chain state, because the roots are supplied
    as input at round creation rather than derived by consensus. A
    verifier that omits this step establishes only that votes are well
@@ -2253,10 +2534,10 @@ above it.
 3. **Nullifier disjointness.** The three nullifier sets defined in
    [Nullifier Sets] contain no duplicates, so no voting authority was
    consumed twice.
-4. **Accumulation.** The per-$(\mathsf{proposal}\_\mathsf{id},
-   \mathsf{vote}\_\mathsf{decision})$ accumulator equals the
-   component-wise sum of the El Gamal ciphertexts in the round's share
-   reveal transactions.
+4. **Accumulation.** Each per-$(\mathsf{proposal}\_\mathsf{id}, j)$
+   accumulator equals the component-wise sum of the position-$j$
+   ciphertexts in the round's share reveal transactions, and every
+   share reveal is anchored to the round's final VCT root.
 5. **Decryption.** The published per-option totals are the decryptions
    of those accumulators, as attested by the threshold decryption
    proofs specified in [Partial Decryption].
@@ -2271,7 +2552,7 @@ they claim.
 **What it does not establish.** No step above, and no combination of
 them, establishes that every vote cast was included. Exclusion of a
 share reveal transaction leaves no evidence in chain state; see
-[^voting-setup]. A verified result is therefore a lower bound on the
+[Transaction Inclusion]. A verified result is therefore a lower bound on the
 support each option received.
 
 **On partial verification.** Checking step 5 alone confirms only that
@@ -2388,7 +2669,7 @@ defense-in-depth in both cases.
 
 The Delegation Proof fixes the note slot count at 5 (with padding for
 holders who have fewer notes). This choice balances wallet coverage
-against proof cost: empirical analysis of the Orchard shielded pool
+against proof cost: empirical analysis of the shielded pool
 shows that over 90% of wallets hold 5 or fewer notes, so most holders
 can delegate their full balance with a single user-facing signature.
 
@@ -2412,29 +2693,32 @@ protocol) are specified in [^balance-proof].
 
 ## Why $N_s$ Shares Per Vote
 
-Splitting a vote into $N_s$ shares is intended to serve two purposes.
-First, temporal unlinkability: shares are submitted independently at
-client-chosen times spread across the voting window, so that an
-observer cannot attribute all shares to a single voter by timing
-correlation. Second, limiting the election authority's view: if the EA
-decrypts an individual ciphertext, it sees one share rather than a
-voter's complete ballot allocation.
+Splitting a vote into $N_s$ shares serves two purposes. First, it
+bounds what a party able to decrypt a single ciphertext learns: one
+share rather than the voter's whole ballot count. Second, it makes the
+voter's on-chain footprint $N_s$ unlinkable reveals rather than one,
+so that recovering the total requires grouping them.
 
-Both purposes are weaker than they appear, and the ZIP should be read
-with that in mind.
+Both purposes depend on the shares being ungroupable, and the protocol
+is designed so that nothing it publishes groups them. Each reveal
+carries a nullifier, ciphertexts and constants that are the same for
+every reveal in the round; see [Privacy Implications]. Earlier drafts
+undermined this by having a submission server construct the Vote
+Reveal Proof, which required the server to be told which vote
+commitment each share belonged to, so that a server holding two shares
+of a vote could group them from the payload alone. That path is
+removed; see [Why Relays Do Not Construct Proofs].
 
-Temporal unlinkability is defeated for submission servers regardless of
-timing, because the Share Submission Payload carries values common to
-all $N_s$ shares of one vote (see [Server-Assisted Submission]). Timing
-measures apply only to observers that see the on-chain reveals and not
-the payloads.
+With content linkage removed, the remaining channel is metadata:
+submission time and network origin. Those are addressed by the
+memoryless schedule in [Submission Timing] and the per-share network
+isolation and one-relay-per-share rules in [Share Submission].
 
-Limiting the EA's view depends entirely on the decomposition strategy.
-Under an even split, one decrypted share determines the total to within
-$N_s$ ballots, so the EA's view of one share is equivalent to its view
-of the whole ballot count. The requirement in [Vote Share] exists to
-prevent this; even so, the reduction is quantitative, not absolute (see
-[Why Randomized Share Decomposition]).
+Limiting what one decryption reveals depends on the decomposition
+strategy. Under an even split, one decrypted share determines the total
+to within $N_s$ ballots, so the EA's view of one share is equivalent
+to its view of the whole ballot count. The requirement in [Vote Share]
+exists to prevent this (see [Why Randomized Share Decomposition]).
 
 Earlier drafts specified a fallback in which a voter casting near the
 end of the voting window placed their full ballot count into a single
@@ -2462,19 +2746,18 @@ single share is then distributed over a wide range rather than
 concentrated at the mean, so decrypting one share bounds the total far
 more loosely.
 
-This is a mitigation, not a solution, and the ZIP should not be read as
-claiming more. Any additive decomposition into a fixed number of parts
-leaks information about the sum: the expected value of a share is
-$\mathsf{num}\_\mathsf{ballots} / N_s$ under any scheme, so an adversary
-decrypting several shares of one vote recovers the total with accuracy
-improving in the number of shares it holds. Randomization raises the
-number of shares an adversary needs; it does not make any number
-sufficient.
-
-Closing the leak entirely requires that no party be able to decrypt an
-individual share at all — that the encryption admit opening only of
-aggregates. That is a change to the encryption layer rather than to the
-decomposition, and it is recorded in [Open issues].
+This is a bound on what one decryption reveals, not a guarantee about
+several. Any additive decomposition into a fixed number of parts leaks
+information about the sum to a party holding more than one part: the
+expected value of a share is $\mathsf{num}\_\mathsf{ballots} / N_s$
+under any scheme, so an adversary that can group several shares of one
+vote and decrypt them recovers the total with accuracy improving in the
+number it holds, and exactly with all $N_s$. Randomization is therefore
+paired with, and not a substitute for, the unlinkability of reveals
+established in [Privacy Implications] and the submission discipline in
+[Share Submission]: the decomposition limits what a single decryption
+reveals, and unlinkability denies the adversary the grouping that would
+let it combine several.
 
 ## Why Blinded Share Commitments
 
@@ -2490,20 +2773,23 @@ blind factor makes this reverse computation infeasible.
 
 On the Pallas curve, every $x$-coordinate has two valid $y$-values:
 $P$ and $-P$. If the share commitment bound only the $x$-coordinates
-of the ciphertext points, a malicious block proposer could negate
-$C_1$ and $C_2$ by flipping the sign bits in their compressed
-encodings (2 bit flips) without changing the $x$-coordinates. The
-negated ciphertext encrypts $-v$ instead of $v$ under the same
-El Gamal key, so the tally would accumulate $\mathsf{Enc}(-v)$ instead
-of $\mathsf{Enc}(v)$, corrupting the election result. The Vote Reveal
-Proof would still verify because the share commitment — binding only
-$x$-coordinates — would be unchanged.
+of the ciphertext points, a voter could open a commitment to the
+negation of the ciphertext it committed: $-C_1$ and $-C_2$ have the
+same $x$-coordinates as $C_1$ and $C_2$, so condition 4 of the Vote
+Reveal Proof would be satisfied by either. The negated ciphertext
+encrypts $-v$ instead of $v$ under the same El Gamal key. The Vote
+Proof's range check on $v$ (condition 9) would be bypassed at reveal,
+the tally would accumulate $\mathsf{Enc}(-v)$, and a voter could
+subtract weight from an option rather than add it.
 
-Including both $x$- and $y$-coordinates in the share commitment hash binds each commitment to
-the exact curve point. Flipping a sign bit changes the $y$-coordinate,
-producing a different $\mathsf{share}\_\mathsf{comm}$, which cascades
-through $\mathsf{shares}\_\mathsf{hash} \to \mathsf{vc} \to$ Merkle
-root, invalidating the proof.
+Including both $x$- and $y$-coordinates in the share commitment hash
+binds each commitment to the exact curve point. Opening to the
+negation changes the $y$-coordinate, producing a different
+$\mathsf{share}\_\mathsf{comm}$, which cascades through
+$\mathsf{shares}\_\mathsf{hash} \to \mathsf{vc} \to$ Merkle root,
+invalidating the proof. The public option-vector coordinates are
+likewise bound in full by the Vote Reveal Proof, so a block proposer
+cannot negate a revealed ciphertext after the fact either.
 
 Full $y$-coordinates are used rather than 1-bit sign values because
 the $y$-cells are already available from the ECC gadget output in the
@@ -2511,105 +2797,78 @@ Vote Proof circuit; extracting parity bits in-circuit would require a
 255-bit field decomposition gadget, adding substantial constraint cost
 for no security benefit.
 
-## Why Other Shares' Ciphertexts Are Withheld
+## Why Relays Do Not Construct Proofs
 
-Each submission server receives only the ciphertext and blind factor
-for the single share it reveals, plus the blinded share commitments
-for all $N_s$ shares. It does not receive the raw ciphertexts or blind
-factors of shares assigned to other servers. The blinded share
-commitments are sufficient for the server to recompute
-$\mathsf{shares}\_\mathsf{hash}$ in the proof (condition 3), while the
-blinding prevents the server from correlating other shares'
-ciphertexts with their commitments.
-
-This section was previously titled "Why Per-Server Share Isolation",
-which overstated the property. What is withheld is the *ciphertext and
-blind factor* of other shares. What is not withheld is the identity of
-the vote: $\mathsf{vc}$, the VCT position, and
-$\mathsf{shares}\_\mathsf{hash}$ appear in every payload of a vote, so
-a server holding two payloads knows they belong to one voter. Nor is
-the property per-server in any useful sense once a server receives more
-than one of a voter's shares. The server selection rule in earlier
-drafts made that the common case rather than the exception; see
-[Why One Server Per Share, Not Half the Fleet].
-
-Note also the interaction with [Why Blinded Share Commitments]: the
-blind factors exist to stop an observer linking revealed shares back to
-a specific vote commitment by recomputing
-$\mathsf{shares}\_\mathsf{hash}$ from on-chain ciphertexts. That defence
-holds against a passive chain observer and is bypassed for submission
-servers, which are given $\mathsf{vc}$ directly in the payload.
-
-## Why Server-Assisted Submission Is Optional
-
-Earlier revisions of this ZIP made server-constructed Vote Reveal
-Proofs the only specified submission path, on two grounds: that mobile
+Earlier revisions of this ZIP had a submission server construct the
+Vote Reveal Proof on the voter's behalf, on two grounds: that mobile
 devices are unreliable for background ZKP computation, and that
 server-side construction enables temporal mixing of shares from many
-voters. Neither ground supports making it the default.
+voters. Neither ground survives examination, and the design had a cost
+that no encoding of the payload could remove.
 
-On cost: Vote Reveal Proof construction has been measured at
-approximately 38 ms per proof. At $N_s = 16$ that is under a second of
-client work for a complete vote. This is well within the budget of a
-mobile client performing a foreground, user-initiated action, and it is
-small beside the delegation and vote proofs the client already
-constructs.
+A prover must be told which leaf of the VCT it is proving membership
+of. Every field a server needed — the vote commitment, its VCT
+position, the shares hash, the array of share commitments — takes the
+same value in all $N_s$ payloads of one vote, so a server receiving two
+of a voter's payloads could group them with certainty, from the
+contents alone, before any timing or network measure applied. The
+correlation was inherent in delegating proof construction: any leaf
+identifier links the $N_s$ shares, because they all descend from one
+vote transaction. Splitting the vote into $N_s$ separately inserted
+leaves would not have helped, since the leaves would be inserted
+consecutively by that transaction, and inserting them separately
+would require a linking proof per share that only the client could
+construct.
 
-On temporal mixing: mixing operates on submission times, and the
-correlation it is meant to defeat is already available to the server
-from the payload contents before any mixing occurs (see
-[Server-Assisted Submission]). A defence applied after the adversary
-has already succeeded does not help.
+The cost of constructing the proof on the client, by contrast, is
+small. Every client that votes already constructs the Vote Proof,
+which contains $N_s$ El Gamal encryptions and a VAN spend; the Vote
+Reveal Proof is smaller than that, and a client constructs it once per
+share. The class of clients that can vote but cannot construct a Vote
+Reveal Proof is empty.
 
-The trust requirement on the server is therefore not minimal. A server
-learns which shares belong to one vote, and that vote's proposal and
-decision. Where submission servers are operated by the same parties
-that hold shares of $\mathsf{ea}\_\mathsf{sk}$, the party able to group
-a voter's shares is also a party able to decrypt them.
+What a server was genuinely providing was availability: a wallet that
+is not online at each scheduled submission time needs some party to
+submit for it. That is a store-and-forward function, and it does not
+require the proof to be built by the party that forwards it. A relay
+that receives a finished share reveal message holds exactly what the
+chain will hold, and can group nothing that a chain observer could not.
+The temporal mixing that server-side construction was meant to enable
+is now provided by the schedule the client draws and the relay honours,
+with the difference that the relay is no longer in a position to defeat
+it.
 
-Server-assisted submission is retained because some clients genuinely
-cannot construct proofs, and a voter who would otherwise be unable to
-vote is better served by a path with a disclosed privacy cost than by
-no path. It is specified as optional, with that cost stated, rather
-than as the default.
+Content linkage had to be removed before timing and network measures
+had anything to protect: a server told which shares belong together
+does not need to infer it. With the payload reduced to the message
+itself, those measures are effective, and [Share Submission] requires
+them.
 
-## Why One Server Per Share, Not Half the Fleet
+## Why One Relay Per Share
 
-Earlier drafts required each share to be sent to exactly
-$\lceil s/2 \rceil$ of the $s$ available servers, selected uniformly at
-random per share, and stated that this ensured a compromised server
-"learns at most one share's encrypted amount per vote commitment".
+Earlier drafts required each share to be sent to
+$\lceil s/2 \rceil$ of the $s$ available servers, for censorship
+resistance through redundancy, and later drafts capped the number of a
+vote's shares any one server could receive. Both rules were reasoning
+about a server that could read the association between shares from
+the payload, and neither is the right rule once it cannot.
 
-That conclusion does not follow from that rule. The supporting analysis
-was per-share: limiting one share to half the servers does ensure that
-no more than half the server set sees that particular ciphertext. The
-property that matters is per-voter, and the two differ. With
-$N_s = 16$ shares each sent to $\lceil s/2 \rceil = 5$ of $s = 10$
-servers, there are 80 deliveries spread over 10 servers, so each server
-receives 8 of that voter's 16 shares in expectation. No selection
-strategy does better under the rule, because the rule fixes the total
-number of deliveries. A coalition of 6 servers pooling ordinary request
-logs holds every share of every voter, with certainty rather than
-probability.
+A relay that holds one share of a vote learns nothing about the vote's
+other shares from any source. A relay that holds two learns nothing
+from their contents, but does hold two arrival events with their
+network origins and two requested submission times, and can group them
+by any of those if the client was careless. The rule that follows is
+the simplest one: exactly one share per relay, each handed over on its
+own network path. It makes the relay's view of any vote a single
+message, which is the same as any observer's view of any single
+transaction.
 
-Combined with [Server-Assisted Submission], under which the payload
-itself identifies which shares belong together, the earlier rule meant
-that a single server ordinarily held enough of a voter's shares to
-reconstruct most of their ballot count, and that a modest coalition
-held all of it.
-
-The replacement rule inverts the tradeoff. Sending each share to one
-server minimises the number of parties that can group anything, and
-censorship resistance is recovered through client-side retry: a client
-that does not observe its share on chain resubmits to a different
-server. Redundancy is obtained sequentially, on demand, rather than
-prophylactically to half the fleet.
-
-This bounds exposure; it does not eliminate it. With $N_s = 16$ and
-$s = 10$, constraint 2 still permits two of a voter's shares to reach
-one server, and retries increase exposure further. A client that wants
-no server to be able to group its shares should use
-[Direct Submission].
+Censorship resistance is recovered through client-side retry: a client
+that does not observe its share on chain resubmits it, directly or to
+a relay that has not seen any of its shares. Redundancy is obtained
+sequentially, on demand, rather than prophylactically to half the
+fleet, and a duplicate that does reach the chain is rejected by its
+nullifier and does no harm.
 
 ## Why There Is No Single-Share Mode
 
@@ -2621,67 +2880,84 @@ itself.
 
 The justification for accepting this was that a submission server might
 not complete $N_s$ Vote Reveal Proofs before the voting window closed,
-so a voter casting late would otherwise lose their vote. The constraint
-was on the server, not the client: proof construction is approximately
-38 ms, so a client can construct all 16 proofs in under a second at any
-point before the deadline.
-
-With [Direct Submission] specified, a late voter has a path that
-preserves both inclusion and amount privacy, and the tradeoff that
-motivated single-share mode no longer exists.
+so a voter casting late would otherwise lose their vote. That
+constraint no longer exists: the client constructs its own proofs,
+does so during a reveal window that opens only after voting has
+closed, and can construct all $N_s$ of them in seconds at any point in
+that window. A voter who is late constructs and submits under the
+compressed schedule in [Submission Timing], which preserves both
+inclusion and amount privacy.
 
 Implementations should note that this mode's exposure was
 disproportionately borne by voters who waited — including those waiting
 deliberately to avoid influencing others — and that its on-chain
-indistinguishability, which earlier drafts cited, protects against a
-chain observer while the submission server can identify such a vote
-directly from the payload.
+indistinguishability, which earlier drafts cited, protected against a
+chain observer while the submission server of the time could identify
+such a vote directly from the payload.
 
-## Why Not Encrypt Vote Decisions
+## Why Decisions Are Encrypted at Reveal
 
-$\mathsf{vote}\_\mathsf{decision}$ is a public input to the Vote Reveal
-Proof and appears in cleartext in every share reveal transaction and in
-every server-assisted payload. Every submission server learns the
-decision of every voter whose shares it handles, and any chain observer
-learns the decision attached to each revealed share. No collusion or
-decryption is required for either.
+Earlier revisions of this ZIP made $\mathsf{vote}\_\mathsf{decision}$ a
+public input to the Vote Reveal Proof, so that the chain could route
+each revealed ciphertext to the accumulator for that option. Every
+submission server and every chain observer learned the decision
+attached to each revealed share, running per-option totals were public
+while a round was open, and validators could exclude reveals by the
+option they supported without decrypting anything. Those revisions
+declined to encrypt decisions on cost grounds: a per-option ciphertext
+vector, computed in the Vote Proof, would multiply that circuit's
+sixteen encryptions by the number of options.
 
-Encrypting decisions would close this, at substantial cost. A
-per-option ciphertext approach requires each share to carry $k$
-ciphertexts — $\mathrm{Enc}(v)$ for the chosen option and
-$\mathrm{Enc}(0)$ for the other $k-1$ — multiplying per-share circuit
-cost by $k$. A validator-decrypted variant hides per-option counts from
-the public but not from validators, and making the bucketing publicly
-verifiable requires an additional proof system scaling with total share
-count.
+The cost is avoidable by producing the vector at reveal rather than at
+vote. The Vote Commitment continues to bind one ciphertext per share
+and the decision as a private witness. The Vote Reveal Proof then
+publishes $N_{\mathsf{opt}}$ ciphertexts, places the committed
+ciphertext at the decision's position, fills every other position with
+a fresh encryption of zero, and proves both facts. The Vote Proof is
+unchanged. The reveal circuit gains $N_{\mathsf{opt}}$ fixed-base and
+$N_{\mathsf{opt}}$ variable-base scalar multiplications, once per
+share, which is well under the cost of the Vote Proof the client has
+already constructed.
 
-Earlier drafts stated that the informativeness of public decisions was
-limited by non-uniform share decomposition. That mitigation was listed
-as an unadopted open question rather than specified, so it was not in
-effect. [Vote Share] now specifies a decomposition requirement, but its
-purpose is to bound what a decrypted share reveals about the voter's
-total, not to conceal the decision, which remains public.
+The padding must use independent randomness per position. With one
+scalar $\rho$ across the vector, the second components of two
+positions would differ by $[v]\, G$ where $v$ is the share value, and
+$v < 2^{30}$ is recoverable by a bounded discrete logarithm without
+any key. Condition 7 of [Vote Reveal Proof] therefore requires a
+distinct $\rho_j$ per position, and the circuit computes a padding
+ciphertext for every position, including the one it discards, so that
+the circuit's shape does not depend on the decision.
 
-The consequence should be stated plainly rather than left implicit:
-this protocol does not provide ballot secrecy against submission
-servers or against anyone reading the vote chain. It provides amount
-privacy, subject to the limits described in [Privacy Implications].
-Whether that is acceptable is a question for the deployment, and it
-should be answered knowingly.
+The committed ciphertext is placed in the vector as it was committed,
+without re-randomisation. It appears on chain exactly once, in the
+reveal that opens it, so there is no second appearance to link it to.
+
+Proposal identifiers remain public. The vote transaction already
+exposes $\mathsf{proposal}\_\mathsf{id}$ as a public input of the Vote
+Proof, so concealing it at reveal would conceal nothing, and it would
+require the vector to span every option of every proposal in the
+round. A deployment that wants a round's proposals to be
+indistinguishable runs one proposal per round.
+
+The consequence is that this protocol provides ballot secrecy against
+relays, validators and chain observers, and against any party holding
+fewer than $t$ key shares. A coalition of $t$ holders that decrypts an
+individual share learns that share's option along with its value,
+within the limits stated in [Privacy Implications].
 
 ## Why Not TEE-Based Proof Construction
 
 Running Vote Reveal Proof construction inside a Trusted Execution
-Environment would let a server handle decisions without observing them,
-providing censorship resistance without decision encryption's circuit
-cost. TEEs introduce infrastructure complexity, rely on vendor-specific
-trust assumptions, and are subject to side-channel attacks demonstrated
-against SGX and comparable platforms.
+Environment was considered as a way to let a server construct proofs
+without observing the witness material or the decision. TEEs introduce
+infrastructure complexity, rely on vendor-specific trust assumptions,
+and are subject to side-channel attacks demonstrated against SGX and
+comparable platforms.
 
-With [Direct Submission] as the default path, the problem a TEE would
-solve is largely avoided rather than mitigated: a client that
-constructs its own proof discloses nothing to any server, without
-requiring hardware assumptions from the operator set.
+With the client constructing its own proofs (see [Share Submission]),
+the problem a TEE would solve does not arise: no server receives
+anything to protect, and no hardware assumption is required of the
+operator set.
 
 ## Why ZIP 318 Scheduling
 
@@ -2713,38 +2989,13 @@ reviewed in that context and need not be re-derived here.
 
 Two differences from ZIP 318 are deliberate. First, delays here are
 expressed in wall-clock time against the round's
-$\mathsf{vote}\_\mathsf{end}\_\mathsf{time}$ rather than in Zcash
+$\mathsf{reveal}\_\mathsf{end}\_\mathsf{time}$ rather than in Zcash
 block deltas, because the deadline is a vote chain parameter and the
 vote chain's block rate is not the Zcash block rate. Second,
 $\mathsf{MEAN}\_\mathsf{DELAY}$ is derived from the remaining window
-rather than fixed, because a voting round's duration is a per-round
+rather than fixed, because a reveal window's duration is a per-round
 configuration value while a migration's duration is chosen by the
 wallet.
-
-## Why Content Linkage Precedes Timing
-
-Three defences appear in this protocol and its companion documents:
-randomized submission timing, distribution of shares across multiple
-servers, and per-share network isolation. Each addresses an adversary
-that must infer which shares belong together.
-
-None of them applies to an adversary that is *told* which shares belong
-together. A submission server receiving two payloads bearing the same
-$\mathsf{vc}$ does not infer the association; it reads it.
-
-The ordering follows: content linkage must be removed before timing and
-network measures have anything to protect. On the direct submission
-path no payload exists, so those measures apply to the on-chain
-footprint and are effective. On the server-assisted path they are not,
-and MUST NOT be described as though they were.
-
-This ordering also determines what future work is useful. Shortening
-delays, adding servers, or adding network isolation to the
-server-assisted path will not change its privacy properties. Removing
-the correlating fields from the payload would, and requires either
-per-share re-randomisation of the values the proof depends on or a
-blinded proof-construction protocol. Neither is specified here; see
-[Open issues].
 
 ## Why Reusing VAN Address and Randomness
 
@@ -2778,15 +3029,37 @@ authority check is intended. An additional non-zero gate
 provides defense-in-depth by rejecting $\mathsf{proposal}\_\mathsf{id} = 0$
 on active rows.
 
-## Why Threshold Secret Sharing
+## Why Distributed Key Generation
 
-The election authority key is split into Shamir shares [^shamir] rather
-than held intact, so that compromise of any set of holders smaller than
-$t$ does not expose $\mathsf{ea}\_\mathsf{sk}$ and therefore cannot
-open an individual share ciphertext. The choice of $t$, and the
-requirement that the number of holders confirming the ceremony be at
-least $t$ so that the tally remains possible, are specified in
-`draft-valargroup-shielded-voting-setup` [^voting-setup].
+The election authority key is generated in shares from the start, so
+that compromise of any set of holders smaller than $t$ does not expose
+$\mathsf{ea}\_\mathsf{sk}$ and therefore cannot open an individual
+share ciphertext, and so that no party ever holds the key at all.
+
+Earlier revisions used a trusted dealer: one party sampled the key,
+split it with Shamir's scheme, distributed the shares and was trusted
+to erase its copy. Erasure is not verifiable by any other party, so
+every amount-privacy claim rested on one party's conduct during a
+window nobody else could observe, and a deployment could at best name
+the party. Distributed key generation removes the window rather than
+naming the party who had it.
+
+The construction is Pedersen's, with each participant proving
+knowledge of its constant term before any other participant's
+commitment is fixed. Without that proof a participant that publishes
+last can choose its commitment as a function of the others', which
+lets it bias the resulting public key or cancel other contributions
+entirely [^gjkr]. For an encryption key the bias itself would not help
+an adversary decrypt, but the cancellation would let a single
+participant substitute a key it controls, and the proof of knowledge
+closes both at the cost of one Schnorr proof per participant. The vote
+chain supplies the authenticated, ordered broadcast channel the
+protocol assumes.
+
+The output is a set of Shamir shares of a key that exists only as a
+sum, and every downstream step — verification keys, partial
+decryptions, DLEQ proofs and Lagrange combination — is unchanged from
+the dealer-based design.
 
 ## Why a Send-Based VAN Model
 
@@ -2819,12 +3092,12 @@ require a fundamentally different data model.
 
 The sync savings of the alternative are also smaller than they first
 appear: even without VAN re-creation, clients still need to update
-VCT Merkle paths for their Vote Commitments (which the submission
-server requires for the Vote Reveal Proof). The VAN model adds
+VCT Merkle paths for their Vote Commitments (which the Vote Reveal
+Proof requires). The VAN model adds
 incremental path-update overhead but does not introduce a new
 category of sync obligation. If a future design change eliminated the
-need for clients to track VCT paths entirely (for example by moving
-Merkle path retrieval fully to the submission server), the tradeoff
+need for clients to track VCT paths entirely (for example by private
+retrieval of Merkle paths from a server), the tradeoff
 would shift in favor of removing the VAN. See [Open issues].
 
 ## Why Classical El Gamal Rather Than Post-Quantum Encryption
@@ -2917,6 +3190,39 @@ anybody that they will use the corresponding shares. A statement
 collected after the round records what happened; one collected before it
 opens is an input the voter can act on.
 
+## Why a Separate Reveal Window
+
+Every Vote Reveal Proof anchors to a VCT root, and the anchor is
+public. Earlier revisions accepted any published root and let voting
+and reveal overlap, so a voter constructing $N_s$ proofs against the
+root current at the time would tag all $N_s$ reveals with a value few
+other voters shared, and a chain observer could group them by it
+without decrypting anything. That is the linkage this ZIP's privacy
+claims cannot survive.
+
+Two remedies were considered. Periodic checkpoint roots, with reveals
+required to anchor to a checkpoint, bound the tag's resolution to the
+checkpoint interval but still partition voters into cohorts by the
+interval their vote landed in, and early voters in a thin round form
+cohorts of one. Closing the voting window before any reveal is accepted
+removes the partition entirely: the VCT is frozen, there is exactly one
+root, and every reveal in the round carries it.
+
+The cost is that a wallet cannot construct its reveal proofs at the
+moment it votes, because the final root does not exist yet. It must
+come online once during the reveal window, construct the proofs, and
+either submit them across the window or hand them to relays that will.
+A wallet that never returns during the reveal window loses its vote.
+That cost is bounded by the length of the reveal window, which is why
+[Round Lifecycle] requires a deployment to publish it and choose it
+with ordinary wallet usage in mind, and it is the reason the protocol
+retains relays at all.
+
+A secondary benefit is that the client's Merkle path is final once the
+round enters REVEALING. A wallet syncs the round's tree once, after
+voting closes, rather than maintaining a witness across the voting
+window.
+
 ## Why the Chain Does Not Validate the Snapshot Roots
 
 The complete remedy is for the vote chain to compute the snapshot roots
@@ -2955,11 +3261,12 @@ section.
 | Parameter | Value | Constraint |
 |---|---|---|
 | $N_s$ | 16 | Shares per vote commitment. |
+| $N_{\mathsf{opt}}$ | 8 | Option positions per share reveal; the maximum options per proposal. See [Vote Reveal Proof]. |
 | Ballot unit | 12,500,000 zatoshi | 0.125 ZEC per ballot; see [Ballot Scaling]. |
 | Share range | $[0, 2^{30})$ | Per-share plaintext bound. |
 | Decomposition | Randomized | MUST satisfy [Vote Share]; even splitting is forbidden. |
-| Shares per server | $\leq \lceil N_s / s \rceil$ | Server-assisted path only; see [Server Selection]. |
-| $\Delta$ | 1 hour | Safety margin before $\mathsf{vote}\_\mathsf{end}\_\mathsf{time}$; see [Submission Timing]. |
+| Shares per relay | 1 | See [Share Submission]. |
+| $\Delta$ | 1 hour | Safety margin before $\mathsf{reveal}\_\mathsf{end}\_\mathsf{time}$; see [Submission Timing]. |
 | $\mathsf{MAX}\_\mathsf{DELAY}$ | $W / 4$ | Delay draws above this are discarded and redrawn. |
 
 ## Round parameters
@@ -2967,12 +3274,13 @@ section.
 | Parameter | Why it is published |
 |---|---|
 | The decryption threshold $t$ and holder count $n$ | Bounds every amount-privacy claim in the protocol; see [Election Authority Key Ceremony]. |
-| The organisation holding each election authority key share | Allows the role separation required in [Ratification] to be checked. |
+| The organisation holding each election authority key share, and its registered Pallas key | Allows the role separation required in [Ratification] to be checked, and lets any party recompute the ceremony's verification keys. |
+| The ceremony timeouts: commitment, dealing, complaint and acknowledgement | See [Election Authority Key Ceremony]. |
+| The reveal window length, $\mathsf{reveal}\_\mathsf{end}\_\mathsf{time} - \mathsf{vote}\_\mathsf{end}\_\mathsf{time}$ | Bounds the period in which a wallet must return to reveal; see [Round Lifecycle]. |
 | Zcash node implementations and versions relied on for $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ | That root is not Zcash consensus data, so which implementation served it is part of what a verifier checks; see [Snapshot Derivation]. |
 | The administrators and their signing keys | Establishes whose attestations wallets recognise; see [Round Attestation]. |
 | The administrator signature threshold $m$ | At least 2; see [Round Attestation]. |
 | $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
-| The party that dealt the election authority key, if a trusted dealer was used | See [Election Authority Key Custody]. |
 | The key-share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
 
 The RECOMMENDED value of $\mathsf{min}\_\mathsf{confirmations}$ is 100
@@ -3002,6 +3310,22 @@ implementations are recorded so that they are not rediscovered as
 defects. A deployment SHOULD resolve each, in the specification or in
 the implementation.
 
+- **Server-constructed reveal proofs.** Deployed implementations send
+  the Vote Reveal Proof's witness material to a submission server,
+  which constructs the proof. This ZIP requires the client to
+  construct it and forbids sending that material to any party; see
+  [Share Submission] and [Why Relays Do Not Construct Proofs].
+- **Cleartext decisions.** Deployed implementations publish
+  $\mathsf{vote}\_\mathsf{decision}$ in every share reveal. This ZIP
+  makes it a private witness and publishes an option vector instead;
+  see [Vote Reveal Proof].
+- **Trusted dealer.** Deployed implementations generate the election
+  authority key at a single dealer. This ZIP specifies distributed key
+  generation; see [Election Authority Key Ceremony].
+- **Overlapping reveal.** Deployed implementations accept share reveals
+  during the voting window against any published root. This ZIP
+  accepts them only during a reveal window after voting closes, and
+  only against the final root; see [Round Lifecycle].
 - **Last-moment window.** Earlier drafts defined a single-share window
   of $\min(0.1 \times \text{round duration}, 3600)$ seconds. Deployed
   implementations have used 40% of the round duration capped at six
@@ -3009,10 +3333,8 @@ the implementation.
   hour. This ZIP removes single-share mode entirely; see
   [Why There Is No Single-Share Mode].
 - **Per-server share limits.** Some deployed client libraries cap the
-  number of a vote's shares sent to any one server. No such limit
-  appeared in any specification, and the libraries that implement one
-  document it as a per-server bound that makes no claim about colluding
-  servers. [Server Selection] now specifies the limit normatively.
+  number of a vote's shares sent to any one server at more than one.
+  [Share Submission] now requires exactly one per relay.
 - **Share decomposition.** Deployed implementations have divided the
   ballot count evenly across the $N_s$ shares. [Vote Share] forbids
   this; see [Why Randomized Share Decomposition].
@@ -3028,7 +3350,7 @@ the implementation.
   Proof, and Vote Reveal Proof.
 - [^ref-vote-sdk] — Cosmos SDK vote chain implementing the VCT,
   nullifier sets, encrypted share accumulator, ceremony, tally, and
-  submission server.
+  the submission server that this ZIP replaces with relays.
 - [^ref-nullifier-pir] — PIR server and client for privately retrieving
   nullifier non-membership proofs.
 - [^ref-librustvoting] — Client-side Rust library for proof generation,
@@ -3057,33 +3379,19 @@ the implementation.
   to track VCT paths (e.g., full server-side path retrieval), this
   tradeoff should be revisited.
   See [Why a Send-Based VAN Model].
-- The election authority key opens individual share ciphertexts as
-  readily as it opens the aggregate, so the requirement that individual
-  vote amounts never be revealed (see [Requirements]) is not met by this
-  design. Satisfying it requires an encryption layer that admits opening
-  of aggregates only, so that no threshold of key holders can decrypt a
-  single voter's share. Randomized share decomposition (see
-  [Why Randomized Share Decomposition]) reduces the resulting exposure
-  but cannot remove it. This is a change to the encryption layer and is
-  not addressed in this ZIP.
+- A coalition holding $t$ key shares can decrypt any individual share
+  ciphertext. The protocol relies on the unlinkability of reveals (see
+  [Privacy Implications]) to keep such a coalition from recovering any
+  voter's total; an encryption layer that admitted opening of
+  aggregates only would remove even the per-share exposure, and is not
+  specified here.
 - Encrypted shares are recorded on the vote chain permanently, and the
-  El Gamal layer is not post-quantum. The plaintext is a voter's
-  shielded balance at the snapshot, which does not become less sensitive
-  with time. [Non-requirements] places post-quantum security out of
-  scope; that exclusion should be revisited, because the combination of
-  a permanent public record and a non-post-quantum encryption layer
-  means the exposure above has no expiry.
-- On the server-assisted submission path, the payload necessarily carries
-  values common to all $N_s$ shares of one vote, so any server receiving
-  two of a voter's payloads can group them. Removing this correlation
-  while retaining server-constructed proofs requires either per-share
-  re-randomisation of the values the Vote Reveal Proof depends on, or a
-  protocol in which the server constructs the proof without learning
-  them. Neither is specified. Until one is, the privacy properties of
-  the two submission paths differ materially and clients should prefer
-  [Direct Submission].
-- Open issues related to the EA key ceremony are tracked in
-  `draft-valargroup-shielded-voting-setup` [^voting-setup].
+  El Gamal layer is not post-quantum. The plaintext is a fragment of a
+  voter's shielded balance at the snapshot, which does not become less
+  sensitive with time. [Non-requirements] places post-quantum security
+  out of scope; that exclusion should be revisited, because the
+  combination of a permanent public record and a non-post-quantum
+  encryption layer means the exposure above has no expiry.
 - Voters have no privacy-preserving way to confirm that their shares
   were included on the vote chain. A voter can observe the chain, but
   querying it for their own share nullifiers reveals which nullifiers
@@ -3097,25 +3405,25 @@ the implementation.
   that option equals their individual contribution. An opt-in mechanism
   to amend the declared ballot count — lowering, rounding or padding it,
   and proving the amendment in zero knowledge — would mitigate this.
-- **Key-share holder eligibility contradicts role separation.**
-  [Election Authority Key Ceremony] makes every validator with a
-  registered Pallas key eligible to receive a share, and selects the
-  dealer from block proposers. The operational specification
-  (`draft-valargroup-shielded-voting-setup` [^voting-setup]) requires
-  that a validator MUST NOT hold a share of the same round's key. Both
-  cannot stand. Resolving it requires specifying the key-share holder
-  set as distinct from the validator set: how holders register Pallas
-  keys, who is eligible, and who deals. Until then the ceremony as
-  written assigns shares to exactly the parties the role rule forbids.
+- **Key-share holder registration.** [Election Authority Key Ceremony]
+  requires a key-share holder set, disjoint from the validator set,
+  each with a registered Pallas public key. The operational
+  specification (`draft-valargroup-shielded-voting-setup`
+  [^voting-setup]) currently registers Pallas keys only for
+  validators. How key-share holders are admitted, how they register
+  keys, and how their addresses are recognised by the chain for
+  ceremony and acknowledgement transactions is not yet specified.
+- **Metadata linkage through relays.** [Share Submission] requires one
+  relay per share and an independent network path per submission, and
+  relies on the client to honour both. A relay operator that also
+  operates the client's network path, or a coalition of relays pooling
+  arrival logs with a coalition of $t$ key-share holders, could
+  correlate by metadata what the protocol does not correlate by
+  content. Role separation between relays and key-share holders is an
+  operational requirement for `draft-valargroup-shielded-voting-setup`
+  [^voting-setup].
 - **Snapshot root validation by consensus**: see
   [Why the Chain Does Not Validate the Snapshot Roots].
-- **Trusted dealer**: [Election Authority Key Ceremony] specifies a
-  single dealer that holds $\mathsf{ea}\_\mathsf{sk}$ for the duration of
-  key generation and is trusted to erase it. Distributed key generation,
-  or at minimum published verifiable secret sharing commitments, would
-  remove that trust; [Election Authority Key Custody] requires a
-  deployment to name the dealer and recommends the upgrade, but neither
-  is specified here.
 - **Administrator keys**: wallets identify administrator keys as
   `draft-valargroup-shielded-voting-wallet-api` [^wallet-api]
   specifies, but how administrators are chosen, and how their keys are
@@ -3142,6 +3450,14 @@ the implementation.
 [^bip39]: [M. Palatinus, P. Rusnak, A. Voisine, and S. Bowe, "BIP 39: Mnemonic code for generating deterministic keys", 2013](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki)
 
 [^shamir]: [A. Shamir, "How to share a secret", Communications of the ACM, vol. 22, no. 11, pp. 612-613, 1979](https://doi.org/10.1145/359168.359176)
+
+[^pedersen-dkg]: [T. P. Pedersen, "A Threshold Cryptosystem without a Trusted Party", EUROCRYPT 1991](https://link.springer.com/chapter/10.1007/3-540-46416-6_47)
+
+[^feldman]: [P. Feldman, "A Practical Scheme for Non-interactive Verifiable Secret Sharing", FOCS 1987](https://doi.org/10.1109/SFCS.1987.4)
+
+[^gjkr]: [R. Gennaro, S. Jarecki, H. Krawczyk, and T. Rabin, "Secure Distributed Key Generation for Discrete-Log Based Cryptosystems", Journal of Cryptology 20(1), 2007](https://doi.org/10.1007/s00145-006-0347-3)
+
+[^frost]: [C. Komlo and I. Goldberg, "FROST: Flexible Round-Optimized Schnorr Threshold Signatures", SAC 2020](https://eprint.iacr.org/2020/852)
 
 [^chaum-pedersen]: [D. Chaum and T. P. Pedersen, "Wallet Databases with Observers", CRYPTO 1992](https://link.springer.com/chapter/10.1007/3-540-48071-4_7)
 
