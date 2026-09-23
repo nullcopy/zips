@@ -20,19 +20,6 @@ when, they appear in all capitals.
 
 The terms below are to be interpreted as follows:
 
-Administrator
-
-: A party whose signature over a round's defining fields wallets
-  recognise. See [Configuration Authentication].
-
-Vote round
-
-: A time-bounded voting session defining a set of proposals, a Zcash
-  snapshot height, a voting deadline and a reveal deadline. Wallet
-  clients interact with exactly one vote round at a time. The round
-  states and their transitions are specified in the "Round Lifecycle"
-  section of [^voting-protocol].
-
 Delegation
 
 : The act of proving ownership of unspent Orchard notes in the Ironwood
@@ -47,17 +34,19 @@ Ironwood pool
   those constructions as used in the Ironwood pool. See
   [^voting-protocol].
 
-Vote authority note (VAN)
+Poll runner
 
-: A note appended to the vote commitment tree during delegation. The VAN
-  carries the delegated vote weight and is consumed (nullified) when
-  the holder casts a vote.
+: The party that runs a voting round and signs the vote configuration
+  by which wallets find it. A wallet recognises a poll runner by a
+  public key held in the wallet's own configuration. See
+  [Configuration Authentication] and the "Poll Signature" section of
+  [^voting-protocol].
 
-Vote commitment tree
+Poll signature
 
-: An append-only Merkle tree that records vote authority notes and vote
-  commitments. The tree root at a given block height serves as a public
-  input to zero-knowledge proof verification.
+: The poll runner's signature over a round's defining fields, carried
+  in the configuration's `poll_signature` field and verified as
+  specified in [Configuration Authentication].
 
 Relay
 
@@ -89,12 +78,43 @@ Share reveal message
   the "Share Reveal Message" section of [^voting-protocol]; its JSON
   encoding is given in [Share Reveal Message Format].
 
+Trustee
+
+: One of the parties named in a round's configuration that jointly
+  generate the round's election authority key and each hold a share of
+  its private key. Every trustee ratifies the round by acknowledging
+  that key on the vote chain; a wallet verifies those acknowledgements
+  before encrypting to it. See [Binding to the Chain Round] and the
+  "Election Authority Key Ceremony" section of [^voting-protocol].
+
+Vote authority note (VAN)
+
+: A note appended to the vote commitment tree during delegation. The VAN
+  carries the delegated vote weight and is consumed (nullified) when
+  the holder casts a vote.
+
+Vote commitment tree
+
+: An append-only Merkle tree that records vote authority notes and vote
+  commitments. The tree root at a given block height serves as a public
+  input to zero-knowledge proof verification.
+
+Vote round
+
+: A time-bounded voting session defining a set of proposals, a Zcash
+  snapshot height, a voting deadline and a reveal deadline. Wallet
+  clients interact with exactly one vote round at a time. The round
+  states and their transitions are specified in the "Round Lifecycle"
+  section of [^voting-protocol].
+
 # Abstract
 
 This ZIP specifies the REST API endpoints, wire formats, and discovery
 mechanism that wallet clients use to participate in shielded on-chain
 voting rounds. It covers vote round discovery via a per-vote
-configuration document, data query endpoints for reading chain state,
+configuration document signed by the round's poll runner, the checks by
+which a wallet verifies a round's snapshot roots and election authority
+key for itself, data query endpoints for reading chain state,
 transaction submission endpoints for delegation, vote casting and share
 reveal, the payload a wallet hands to a relay, and the encoding
 conventions for all exchanged data.
@@ -133,6 +153,10 @@ of that vote is revealed, the material the Vote Reveal Proofs need,
 and that material never leaves the device.
 - A wallet can authenticate a configuration document, not merely check
 that it is well formed.
+- A wallet verifies a round's snapshot roots against the Zcash
+consensus node it already trusts, and the round's election authority
+key against the trustees' own acknowledgements, rather than accepting
+either on any third party's word.
 - A voter can delegate part of their balance rather than all of it.
 - Network-level requirements needed for the protocol's privacy claims
 to hold at the client are stated normatively, not left to
@@ -143,11 +167,11 @@ component has no impact on other components or the configuration schema.
 
 # Non-requirements
 
-- Key-share holder onboarding, key registration, and the EA key
-ceremony (distributed key generation), specified in [^voting-protocol]
-and [^voting-setup].
+- Trustee onboarding, key registration, and the EA key ceremony
+(distributed key generation), specified in [^voting-protocol] and
+[^voting-setup].
 - Chain consensus rules and block production.
-- Round creation and governance authority operations.
+- Round creation and the poll runner's operations.
 - The internal implementation of relays. A relay's obligations are
 specified in [^voting-protocol]; this document specifies only the
 payload a wallet hands to one.
@@ -182,68 +206,79 @@ See [Version Handling] for the normative rules.
    configuration JSON document for the round.
    See [Vote Configuration Format].
 
-2. **Validate and authenticate configuration.** Check all fields
-   against the rules in [Validation Rules], verify version compatibility
-   per [Version Handling], and verify the administrator attestations per
-   [Configuration Authentication]. Reject the configuration and stop if
-   any check fails.
+2. **Validate configuration.** Check all fields against the rules in
+   [Validation Rules] and verify version compatibility per
+   [Version Handling]. Reject the configuration and stop if any check
+   fails.
 
-3. **Fetch active round from chain.** Query `GET /shielded-vote/v1/rounds/active`
-   to confirm the round is ACTIVE (or, for a wallet returning to
-   reveal, REVEALING) and retrieve on-chain parameters.
-   See [Active Round].
+3. **Verify the poll signature.** Verify `poll_signature` against a
+   recognised poll runner key per [Configuration Authentication].
+   Reject the configuration and stop if it does not verify.
 
-4. **Bind the round to the configuration.** Confirm that the chain's
-   round carries exactly the values the authenticated configuration
-   attests to, including the proposals hash computed from the
-   configuration's `proposals` array. See [Binding to the Chain Round].
+4. **Verify the snapshot roots.** Confirm `snapshot_blockhash`,
+   `nc_root` and `nullifier_imt_root` against the wallet's own Zcash
+   consensus node per [Snapshot Verification]. Stop if any differs.
+
+5. **Fetch active round from chain.** Query
+   `GET /shielded-vote/v1/rounds/active` to confirm the round is ACTIVE
+   (or, for a wallet returning to reveal, REVEALING) and retrieve
+   on-chain parameters, including `ea_pk`. A round opens once every
+   trustee has acknowledged its election authority key. See
+   [Active Round].
+
+6. **Bind the round to the configuration.** Confirm that the chain's
+   round carries exactly the values the poll runner signed, including
+   the proposals hash computed from the configuration's `proposals`
+   array, and that every trustee in the configuration has acknowledged
+   the round's `ea_pk` (fetched via [Round Acknowledgements]). See
+   [Binding to the Chain Round].
 
 ## Delegation
 
-5. **Obtain nullifier exclusion proofs.** Obtain Merkle
+7. **Obtain nullifier exclusion proofs.** Obtain Merkle
    non-membership proofs for the wallet's Orchard note nullifiers at
    `snapshot_height`. A wallet holding the nullifier set at that
    height constructs them itself; otherwise it retrieves them from a
    `pir_endpoints` server. See
    [Nullifier Exclusion Proof Retrieval].
 
-6. **Construct and submit delegation transaction.** Build the ZKP1
+8. **Construct and submit delegation transaction.** Build the ZKP1
    proof (proving Orchard note ownership at the snapshot height) and
    submit via `POST /shielded-vote/v1/delegate-vote`.
    See [Delegation Transaction] and [^orchard-balance-proof].
 
-7. **Poll for delegation confirmation.** Poll
+9. **Poll for delegation confirmation.** Poll
    `GET /shielded-vote/v1/tx/{hash}` using the `tx_hash` from the
    submission response until the response includes a non-empty `height`
    and `code` = 0. See [Confirmation Polling].
 
-8. **Sync commitment tree and locate VAN.** Query the
-   [Commitment Tree Leaves] endpoint to incrementally sync the local
-   tree. Identify the wallet's vote authority note by its commitment
-   `van_cmx` computed during step 6.
+10. **Sync commitment tree and locate VAN.** Query the
+    [Commitment Tree Leaves] endpoint to incrementally sync the local
+    tree. Identify the wallet's vote authority note by its commitment
+    `van_cmx` computed during step 8.
 
 ## Voting (during ACTIVE; repeat for each proposal)
 
-9. **Construct and submit vote commitment.** Build the ZKP2 proof
-   (consuming the current VAN and producing a new VAN) and submit
-   via `POST /shielded-vote/v1/cast-vote`. The tree root at the
-   anchor height is a public input to this proof. The vote decision
-   is a private input to this proof and never appears in any request
-   body. See [Vote Commitment Transaction] and [^voting-protocol].
+11. **Construct and submit vote commitment.** Build the ZKP2 proof
+    (consuming the current VAN and producing a new VAN) and submit
+    via `POST /shielded-vote/v1/cast-vote`. The tree root at the
+    anchor height is a public input to this proof. The vote decision
+    is a private input to this proof and never appears in any request
+    body. See [Vote Commitment Transaction] and [^voting-protocol].
 
-10. **Persist the reveal material.** Store, encrypted at rest, the
+12. **Persist the reveal material.** Store, encrypted at rest, the
     vote commitment and everything the Vote Reveal Proofs will need
     to open it during the reveal window. See
     [Reveal Material Persistence].
 
-11. **Poll for vote commitment confirmation.** Poll
+13. **Poll for vote commitment confirmation.** Poll
     `GET /shielded-vote/v1/tx/{hash}` until confirmed.
 
-12. **Sync commitment tree.** Query [Commitment Tree Leaves] again
+14. **Sync commitment tree.** Query [Commitment Tree Leaves] again
     to locate the new VAN (needed as input for the next proposal)
     and the vote commitment leaf, recording its leaf position.
 
-Steps 9 through 12 are repeated sequentially for each proposal in
+Steps 11 through 14 are repeated sequentially for each proposal in
 the round. Each iteration consumes the current VAN and produces a
 new one, so proposals cannot be voted on in parallel. Voting ends
 at `vote_end_time`.
@@ -258,36 +293,36 @@ at least once during the reveal window cannot reveal its shares, and
 the vote is not counted. [Submission Timing] requires wallets to
 surface this to the user.
 
-13. **Obtain the final VCT root and Merkle path.** Query
+15. **Obtain the final VCT root and Merkle path.** Query
     [Commitment Tree (Latest)] once the round is REVEALING, sync any
     remaining leaves via [Commitment Tree Leaves], and compute the
     Merkle path for each of the wallet's vote commitments against the
     final root.
 
-14. **Construct the share reveal messages.** For each vote, construct
+16. **Construct the share reveal messages.** For each vote, construct
     $N_s$ Vote Reveal Proofs locally from the persisted reveal
     material and assemble $N_s$ share reveal messages. No party other
     than the wallet constructs these proofs. See [Share Submission]
     and [^voting-protocol].
 
-15. **Draw the submission schedule.** Draw $N_s$ submission times
+17. **Draw the submission schedule.** Draw $N_s$ submission times
     within the reveal window as specified in [Submission Timing].
 
-16. **Submit.** Either submit each message directly via
+18. **Submit.** Either submit each message directly via
     `POST /shielded-vote/v1/reveal-share` at its scheduled time, or
     hand each finished message, with its scheduled time as
     `submit_at`, to a distinct relay via `POST /shielded-vote/v1/shares`.
     Each submission or hand-off uses its own network path. See
     [Share Submission] and [Network Isolation].
 
-17. **Optionally confirm inclusion.** A wallet MAY check
+19. **Optionally confirm inclusion.** A wallet MAY check
     `GET /shielded-vote/v1/share-status/{roundId}/{nullifier}`, subject
     to the privacy caveats in [Share Status]. This is not a required
     step.
 
 ## Results (optional)
 
-18. **View tally results.** After the round reaches FINALIZED status,
+20. **View tally results.** After the round reaches FINALIZED status,
     query `GET /shielded-vote/v1/tally-results/{round_id}` for
     decrypted per-proposal tallies. See [Tally Results].
 
@@ -317,10 +352,8 @@ participate in the round.
   ],
   "snapshot_height": 2800000,
   "snapshot_blockhash": "<base64, 32 bytes>",
-  "min_confirmations": 100,
   "nc_root": "<base64, 32 bytes>",
   "nullifier_imt_root": "<base64, 32 bytes>",
-  "ea_pk": "<base64, 32 bytes>",
   "vote_end_time": 1735689600,
   "reveal_end_time": 1736294400,
   "proposals": [
@@ -334,15 +367,29 @@ participate in the round.
       ]
     }
   ],
+  "trustees": [
+    {
+      "label": "trustee-1",
+      "address": "<vote chain account address>",
+      "account_pk": "<base64, 32 bytes>"
+    },
+    {
+      "label": "trustee-2",
+      "address": "<vote chain account address>",
+      "account_pk": "<base64, 32 bytes>"
+    }
+  ],
   "supported_versions": {
     "pir": ["v0", "v1"],
     "vote_protocol": "v0",
     "tally": "v0",
     "vote_server": "v1"
   },
-  "signatures": [
-    {"key_id": "admin-1", "alg": "ed25519", "sig": "<base64, 64 bytes>"}
-  ]
+  "poll_signature": {
+    "key_id": "poll-runner-1",
+    "alg": "ed25519",
+    "sig": "<base64, 64 bytes>"
+  }
 }
 ```
 
@@ -358,18 +405,17 @@ participate in the round.
 | `pir_endpoints`                    | array            | One or more nullifier PIR server base URLs. Each entry has `url` and `label`.                                                  |
 | `snapshot_height`                  | integer          | Zcash block height at which the Ironwood pool snapshot was taken.                                                              |
 | `snapshot_blockhash`               | string           | Base64-encoded 32-byte hash of the Zcash block at `snapshot_height`.                                                           |
-| `min_confirmations`                | integer          | Confirmation depth used when choosing the snapshot block.                                                                      |
 | `nc_root`                          | string           | Base64-encoded 32-byte Ironwood pool note commitment tree root at the snapshot.                                                |
 | `nullifier_imt_root`               | string           | Base64-encoded 32-byte nullifier non-membership tree root at the snapshot.                                                     |
-| `ea_pk`                            | string           | Base64-encoded 32-byte election authority public key (compressed Pallas point).                                                |
 | `vote_end_time`                    | integer          | Unix timestamp (seconds) after which votes are no longer accepted; the round enters REVEALING.                                 |
 | `reveal_end_time`                  | integer          | Unix timestamp (seconds) after which share reveals are no longer accepted; the round enters TALLYING.                          |
 | `proposals`                        | array            | Ordered list of proposals. Each has `id` (integer, 1-indexed), `title` (string), `description` (string), and `options` (array of `{index, label}`). |
+| `trustees`                         | array            | The round's trustees, in the order hashed by [Trustees Hash]. Each entry has `label` (string), `address` (string, the trustee's vote chain account address) and `account_pk` (base64, the 32-byte ed25519 account public key under which the trustee signs its chain transactions). |
 | `supported_versions.pir`           | array of strings | PIR retrieval scheme versions supported by the servers (e.g., `["v0", "v1"]`).                                                 |
 | `supported_versions.vote_protocol` | string           | Vote protocol version covering the ZKP circuits and commitment tree structure (e.g., `"v0"`).                                  |
 | `supported_versions.tally`         | string           | Tally method version covering threshold decryption and result aggregation (e.g., `"v0"`).                                      |
 | `supported_versions.vote_server`   | string           | Vote server version covering the REST API (e.g., `"v1"`).                                                                      |
-| `signatures`                       | array            | Administrator attestations. Each entry has `key_id` (string), `alg` (string) and `sig` (base64). See [Configuration Authentication]. |
+| `poll_signature`                   | object           | The poll signature. Has `key_id` (string), `alg` (string) and `sig` (base64). See [Configuration Authentication].              |
 
 
 ### Validation Rules
@@ -379,19 +425,21 @@ configuration document is well formed, not that it is authentic. A
 document passing every check below may have been produced by anyone.
 
 A wallet MUST additionally authenticate the configuration as specified
-in [Configuration Authentication]. A wallet MUST NOT use a configuration
-that fails authentication, and MUST NOT treat the structural checks
-below as a substitute for it.
+in [Configuration Authentication], and verify its snapshot roots as
+specified in [Snapshot Verification]. A wallet MUST NOT use a
+configuration that fails either, and MUST NOT treat the structural
+checks below as a substitute for them.
 
 A wallet MUST validate the structure of the configuration before use:
 
 - `config_version` MUST be a version the wallet recognizes. This
 specification defines version 3. A version 1 document carries no
-attestation, and a version 2 document carries no `reveal_end_time` and
-is attested under an earlier domain separator: a wallet MUST NOT
-accept either for a round created after this specification takes
-effect. A wallet that accepts a version 1 document for an earlier
-round MUST treat that round's snapshot as unattested.
+signature, and a version 2 document carries neither `reveal_end_time`
+nor `trustees` and is signed under a model this specification does not
+define: a wallet MUST NOT accept either for a round created after this
+specification takes effect. A wallet that accepts a version 1 or 2
+document for an earlier round MUST NOT present that round to the user
+as authenticated.
 - `vote_round_id` MUST be exactly 64 lowercase hexadecimal characters.
 - `vote_servers` MUST contain at least one entry.
 - `relays`, if present, MUST be an array; each entry MUST have a
@@ -402,10 +450,14 @@ treat an absent `relays` field as an empty array.
 - `reveal_end_time` MUST be greater than `vote_end_time`. The minimum
 separation the chain enforces is specified in the "Round Lifecycle"
 section of [^voting-protocol].
-- `snapshot_blockhash`, `nc_root`, `nullifier_imt_root` and `ea_pk` MUST
-each be the base64 encoding of exactly 32 bytes.
-- Each `signatures` entry MUST have a string `key_id`, a string `alg`,
-and a base64 `sig`.
+- `snapshot_blockhash`, `nc_root` and `nullifier_imt_root` MUST each be
+the base64 encoding of exactly 32 bytes.
+- `trustees` MUST contain at least 2 entries. Each entry MUST have a
+string `label`, a string `address`, and an `account_pk` that is the
+base64 encoding of exactly 32 bytes. `address` values MUST be unique
+across entries.
+- `poll_signature` MUST be an object with a string `key_id`, a string
+`alg`, and a base64 `sig`.
 - `proposals` MUST contain between 1 and 15 entries.
 - Each proposal MUST have between 2 and 8 options.
 - Proposal `id` values MUST be unique and in the range 1 to 15.
@@ -418,56 +470,144 @@ at least one version the wallet supports.
 
 ### Configuration Authentication
 
-A wallet holds a **trusted key set**: a list of administrator public
-keys, each with a `key_id` and an `alg`, together with the administrator
-signature threshold $m$. The trusted key set is part of the wallet's own
-configuration, not of any vote configuration document; how it is
-provisioned is outside the scope of this specification.
+A wallet holds a **recognised poll runner set**: a list of poll runner
+public keys, each with a `key_id` and an `alg`. The set is part of the
+wallet's own configuration, not of any vote configuration document; how
+it is provisioned is outside the scope of this specification. A key
+absent from the set is not a poll runner as far as the wallet is
+concerned, whatever a configuration says about it.
 
-For each entry in the configuration's `signatures`, a wallet:
+A configuration carries exactly one signature, `poll_signature`. To
+verify it, a wallet:
 
-1. MUST resolve `key_id` to a key in its trusted key set. If no key
-   matches, the signature MUST be treated as invalid.
-2. MUST verify that the entry's `alg` matches the `alg` of the resolved
-   key. If they differ, the signature MUST be treated as invalid.
-3. MUST verify `sig` over the bytes defined in the "Round Attestation"
-   section of `draft-valargroup-shielded-voting` [^voting-protocol],
-   taking each field from the configuration (`vote_round_id` decoded
-   from hex, the base64 fields decoded to bytes, `snapshot_height`,
-   `vote_end_time`, `reveal_end_time` and `min_confirmations` as
-   big-endian unsigned integers of the widths given there) and
-   `proposals_hash` as computed from the configuration's `proposals`
-   per [Proposals Hash]. The version in the attestation's domain
-   separator is the document's `config_version`; a version 3 document
-   is verified under `ZcashVotingRoundAttestation:v3`. This
-   specification defines one algorithm, `"ed25519"`, verified per
-   RFC 8032 [^rfc8032].
-4. MUST count at most one valid signature per distinct `key_id`.
+1. MUST resolve `poll_signature.key_id` to a key in its recognised poll
+   runner set. If no key matches, the signature is invalid.
+2. MUST verify that `poll_signature.alg` matches the `alg` of the
+   resolved key. If they differ, the signature is invalid.
+3. MUST verify `poll_signature.sig` over the bytes defined in the
+   "Poll Signature" section of `draft-valargroup-shielded-voting`
+   [^voting-protocol]: the ASCII domain separator
+   `ZcashVotingPollSignature:v3` (27 bytes), then `vote_round_id`
+   (32 bytes, decoded from hex), `snapshot_height` (4 bytes,
+   big-endian unsigned), `snapshot_blockhash`, `nc_root` and
+   `nullifier_imt_root` (32 bytes each, decoded from base64),
+   `proposals_hash` (32 bytes, computed from the configuration's
+   `proposals` per [Proposals Hash]), `vote_end_time` and
+   `reveal_end_time` (8 bytes each, big-endian unsigned), and
+   `trustees_hash` (32 bytes, computed from the configuration's
+   `trustees` per [Trustees Hash]). The version in the domain
+   separator is the document's `config_version`. This specification
+   defines one algorithm, `"ed25519"`, verified per RFC 8032
+   [^rfc8032].
 
-A wallet MUST accept a configuration only if the number of valid
-signatures is at least $m$. $m$ MUST be at least 2, and MUST be taken
-from the trusted key set, never from the configuration: a party able to
-publish a configuration could otherwise also set its threshold to 1.
+A wallet MUST accept a configuration only if all three steps succeed.
+
+The signature establishes that the round — its snapshot, its
+proposals, its deadlines and its trustees — is the one the poll runner
+is running. It does not establish that the snapshot roots are correct
+or that the election authority key is genuine, and a wallet MUST NOT
+treat it as doing so: the wallet checks the roots itself
+([Snapshot Verification]) and the key against the trustees'
+acknowledgements ([Binding to the Chain Round]). One signature suffices
+because nothing more is claimed by it. The signed bytes do not include
+`ea_pk`, which does not exist when the poll runner signs, nor
+`min_confirmations`, which the wallet does not check; a configuration
+can therefore be signed and verified before the round opens.
+
+### Trustees Hash
+
+`trustees_hash` is the 32-byte BLAKE2b-256 hash, with personalization
+`ZcashVoteTrustee` (16 bytes), of the concatenation of the `account_pk` values
+of the configuration's `trustees` entries, each decoded from base64 to
+its 32 bytes, in array order and without length prefixes. For $n$
+trustees the input is exactly $32n$ bytes. Neither `label` nor
+`address` enters the hash: the poll signature binds the trustees by
+their keys, and a wallet identifies a trustee's acknowledgement by its
+`account_pk`, not by its label.
+
+### Snapshot Verification
+
+The poll signature establishes which round the poll runner is running,
+not that the round's snapshot roots are correct, and no third party
+vouches for the roots on the wallet's behalf. Before taking part in a
+round — before delegating, voting or submitting any share — a wallet
+MUST perform the procedure in the "Reading the Snapshot Roots" section
+of [^voting-protocol] against the Zcash consensus node it trusts for
+Zcash state, which is the node or light client backend it syncs from:
+
+1. Confirm that the block at `snapshot_height` on that node's best
+   chain has hash `snapshot_blockhash`.
+2. Obtain from that node the Ironwood pool note commitment tree root
+   as of the end of that block — the pool's anchor at that height —
+   and compare it with the configuration's `nc_root`.
+3. Obtain from that node the root of the nullifier non-membership tree
+   over every Ironwood pool nullifier revealed at or before that block,
+   constructed as specified in [^orchard-balance-proof] and served by
+   the node's API, and compare it with the configuration's
+   `nullifier_imt_root`.
+
+If the block hash differs or either root differs, the wallet MUST NOT
+take part in the round. Agreement between the configuration and the
+chain round ([Binding to the Chain Round]), or with any other party's
+copy of the round, does not satisfy this requirement: it shows only
+that two parties received the same values, not that the values are
+correct.
+
+This step requires the wallet's Zcash consensus node or light client
+backend to serve the nullifier non-membership tree root at a given
+height. The interface by which it does so is a Zcash-node-side API
+outside this document, and is not yet specified anywhere; see
+[Open issues]. A wallet whose backend does not serve it cannot complete
+this step and therefore cannot take part in the round.
 
 ### Binding to the Chain Round
 
 A wallet learns a round's on-chain parameters from a vote server
 ([Active Round]), and vote servers are not authenticated. An
 authenticated configuration therefore constrains the round a wallet
-takes part in only if the wallet checks that the two agree.
+takes part in only if the wallet checks that the two agree; and the
+election authority key, which the configuration does not carry, is
+authenticated only if the wallet checks it against the trustees.
 
-Before delegating, voting, or submitting any share in a round, a wallet
-MUST confirm that the `VoteRound` it retrieved carries the same
-`vote_round_id`, `snapshot_height`, `snapshot_blockhash`, `nc_root`,
-`nullifier_imt_root`, `vote_end_time`, `reveal_end_time` and `ea_pk` as
-the authenticated configuration, and that its `proposals_hash` equals
-the hash of the configuration's `proposals` computed per
+**Equality.** Before delegating, voting, or submitting any share in a
+round, a wallet MUST confirm that the `VoteRound` it retrieved carries
+the same `vote_round_id`, `snapshot_height`, `snapshot_blockhash`,
+`nc_root`, `nullifier_imt_root`, `vote_end_time` and `reveal_end_time`
+as the authenticated configuration, and that its `proposals_hash`
+equals the hash of the configuration's `proposals` computed per
 [Proposals Hash]. A wallet MUST NOT take part in a round that fails
 this check.
 
-Without this check a vote server can supply snapshot roots other than
-those the administrators attested to, or an `ea_pk` of its own, to which
-the wallet would then encrypt every share.
+**Election authority key.** `ea_pk` is derived by the vote chain when
+the key ceremony completes and is not part of the configuration; the
+wallet reads it from the `VoteRound`. Before taking part in a round,
+and in any case before encrypting anything to `ea_pk`, a wallet MUST
+fetch the round's acknowledgement transactions via
+[Round Acknowledgements] and verify that for every entry of the
+configuration's `trustees` there is an acknowledgement such that:
+
+1. `signer_pk` equals that trustee's `account_pk` and
+   `trustee_address` equals that trustee's `address`;
+2. `payload` equals SHA-256 over the concatenation of the ASCII string
+   `ack`, `vote_round_id` (32 bytes), the round's `ea_pk` (32 bytes)
+   and the trustee's `address` (its raw account address bytes, without
+   human-readable prefix or checksum), as
+   specified in the "Election Authority Key Ceremony" section of
+   [^voting-protocol];
+3. `signature` is a valid ed25519 signature [^rfc8032] by `signer_pk`
+   over `payload`.
+
+A wallet MUST NOT encrypt to an `ea_pk` for which this check fails for
+any trustee, and MUST NOT take part in the round. An `ea_pk`
+acknowledged by every trustee under its own account key is the key
+those trustees hold shares of; see the "Poll Signature" and
+"Ratification" sections of [^voting-protocol].
+
+Without the equality check a vote server can supply snapshot roots or
+deadlines other than those the poll runner signed. Without the
+acknowledgement check it could supply an `ea_pk` of its own, to which
+the wallet would then encrypt every share; it cannot produce
+acknowledgements of that key without the trustees' account keys.
 
 ### Distribution
 
@@ -481,7 +621,8 @@ to the configuration file.
 
 The choice of distribution mechanism is outside the scope of this
 specification. Regardless of the mechanism, the wallet MUST validate and
-authenticate the configuration as described above before using it.
+authenticate the configuration, and verify its snapshot roots, as
+described above before using it.
 
 ## Data Query Endpoints
 
@@ -518,16 +659,19 @@ Returns the active voting round, if any.
 | `title`              | string            | Short human-readable round title.                                    |
 | `creator`            | string            | Address of the account that created the session.                     |
 | `created_at_height`  | uint64            | Vote chain block height at which the round was created.              |
+| `trustees`           | array             | Trustees named in the round creation transaction. Informational: a wallet binds to the configuration's `trustees`, not to this field. |
+| `min_confirmations`  | uint64            | Confirmation depth the poll runner applied when choosing the snapshot. Informational; not checked by the wallet. |
 
 
 The response may contain additional fields related to the EA key
-ceremony and threshold decryption (e.g., ceremony status, key-share
-holder commitments, encrypted dealings). These fields exist for
-key-share holder coordination during distributed key generation and
-have no bearing on wallet operations, so they are not documented here.
-See the "Election Authority Key Ceremony" section of
-[^voting-protocol] and `draft-valargroup-shielded-voting-setup`
-[^voting-setup] for details.
+ceremony and threshold decryption (e.g., ceremony status, trustee
+commitments, encrypted dealings). These fields exist for trustee
+coordination during distributed key generation and have no bearing on
+wallet operations, so they are not documented here. The trustees'
+acknowledgements, which a wallet does check, are served separately by
+[Round Acknowledgements]. See the "Election Authority Key Ceremony"
+section of [^voting-protocol] and
+`draft-valargroup-shielded-voting-setup` [^voting-setup] for details.
 
 The `proposals` field in the VoteRound response contains the same
 proposals as the vote configuration document. The `proposals_hash`
@@ -575,6 +719,36 @@ Returns details for a specific vote round.
 - `round_id`: Hex-encoded 32-byte vote round identifier (64 characters).
 
 **Response body:** Same `VoteRound` structure as [Active Round].
+
+### Round Acknowledgements
+
+```
+GET /shielded-vote/v1/rounds/{roundId}/acknowledgements
+```
+
+Returns the acknowledgement transactions recorded for a round: the
+transactions by which its trustees ratified it at the end of the key
+ceremony (see the "Election Authority Key Ceremony" and "Ratification"
+sections of [^voting-protocol]).
+
+**Path parameters:**
+
+- `roundId`: Hex-encoded 32-byte vote round identifier (64 characters).
+
+**Response body:** A JSON object containing an `acknowledgements`
+array. Each entry represents one acknowledgement transaction:
+
+| Field             | Type              | Description                                                                 |
+| ----------------- | ----------------- | --------------------------------------------------------------------------- |
+| `trustee_address` | string            | Vote chain account address of the acknowledging trustee.                    |
+| `payload`         | hex (32 bytes)    | The SHA-256 acknowledgement payload, as specified in [Binding to the Chain Round]. |
+| `signature`       | base64 (64 bytes) | ed25519 signature over `payload` by `signer_pk`.                            |
+| `signer_pk`       | base64 (32 bytes) | ed25519 account public key of the signer.                                   |
+
+The array is empty for a round no trustee has yet acknowledged. The
+server does not verify entries on the wallet's behalf: the wallet MUST
+apply the checks in [Binding to the Chain Round] to each entry and MUST
+NOT infer anything from an entry's presence alone.
 
 ### List Rounds
 
@@ -1156,12 +1330,12 @@ the config schema (e.g., adding a new required top-level field) bumps
 `vote_protocol`, and a change to decryption or aggregation bumps
 `tally`.
 
-`config_version` also selects the version in the attestation domain
-separator (see [Configuration Authentication]). Version 2 added the
-`signatures` attestation. Version 3 added `reveal_end_time` and
-`relays`, and moved the attestation to
-`ZcashVotingRoundAttestation:v3`, whose signed bytes include
-`reveal_end_time`.
+`config_version` also selects the version in the poll signature's
+domain separator (see [Configuration Authentication]). Version 3 adds
+`reveal_end_time`, `relays`, `trustees` and `poll_signature`, and
+removes the multi-signer `signatures` array, `ea_pk` and
+`min_confirmations` that version 2 carried; its signature is verified
+under `ZcashVotingPollSignature:v3`.
 
 ## Transaction Lifecycle
 
@@ -1266,7 +1440,7 @@ wallet can use is the number of distinct relay operators the
 configuration names; a deployment that hosted the relay endpoint on
 the same process as the chain endpoints would give a wallet with one
 vote server exactly one relay. Listing relays separately also lets a
-deployment keep relay operators disjoint from key-share holders, which
+deployment keep relay operators disjoint from trustees, which
 [^voting-protocol] records as an operational requirement. Nothing
 prevents a deployment from operating both a vote server and a relay,
 but the wallet treats the two lists independently.
@@ -1295,6 +1469,13 @@ volumes involved.
 - [Share Status] lets a wallet confirm inclusion only by disclosing
   which nullifiers are its own. A private-retrieval confirmation
   mechanism is an open issue in [^voting-protocol].
+- [Snapshot Verification] requires the wallet's Zcash consensus node or
+  light client backend to serve the nullifier non-membership tree root
+  at a given height. No Zcash node or light client API for this is
+  specified; it is a Zcash-node-side interface outside this document,
+  and until one exists a wallet cannot complete the verification and
+  so cannot take part in a round.
+
 
 # Reference implementation
 
@@ -1302,8 +1483,9 @@ A reference implementation of the vote chain REST API, together with
 the server-side share submission path that [^voting-protocol] replaces
 with relays, is available at
 [valargroup/vote-sdk](https://github.com/valargroup/vote-sdk). It does
-not yet implement the reveal window, direct share reveal, or the relay
-hand-off specified here.
+not yet implement the reveal window, direct share reveal, the relay
+hand-off, the poll signature or the acknowledgement query specified
+here.
 
 # References
 
