@@ -1791,11 +1791,10 @@ client that reacts to a closing window by sending everything at once
 reproduces, through timing, the exposure that
 [Why There Is No Single-Share Mode] removes from the payload.
 
-There is no single-share submission mode. Earlier drafts specified that
-a voter casting within a final window place their entire ballot count
-into one share, submitted immediately. A client MUST NOT do this: it
-concentrates the voter's entire weight into one ciphertext, so a single
-decryption recovers it exactly. See
+There is no single-share submission mode. A client MUST NOT place a
+voter's entire ballot count into one share, however close the deadline:
+it concentrates the voter's entire weight into one ciphertext, so a
+single decryption recovers it exactly. See
 [Why There Is No Single-Share Mode].
 
 
@@ -2009,7 +2008,7 @@ Choosing the snapshot is the start of round setup, not a single
 automatic action. The poll runner is responsible for the following
 coordinated activities:
 
-1. **Determine the snapshot roots.** The Ironwood pool note commitment
+1. **Read the snapshot roots.** The Ironwood pool note commitment
    tree root ($\mathsf{nc}\_\mathsf{root}$) and the nullifier non-membership
    tree root ($\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$) are
    the two roots $\mathsf{rt^{cm}}$ and $\mathsf{rt^{excl}}$ of the pool
@@ -2040,8 +2039,8 @@ coordinated activities:
 Both snapshot roots are properties of Zcash mainnet state at
 $(H, \mathsf{snapshot}\_\mathsf{blockhash})$. A party obtains them by
 reading them from a Zcash consensus node that has validated the chain
-to at least that height. No party reconstructs either tree from the
-Zcash chain or from its leaves.
+to at least that height. No other party's construction of either tree
+is a source for the round's roots.
 
 1. Confirm that the block at height $H$ on the Zcash consensus node's
    best chain has hash $\mathsf{snapshot}\_\mathsf{blockhash}$. If it
@@ -2087,7 +2086,7 @@ structure specified in `draft-valargroup-shielded-voting-wallet-api`
 [^wallet-api]. The transaction supplies `snapshot_height`,
 `snapshot_blockhash`, `proposals_hash`, `vote_end_time`,
 `reveal_end_time`, `nullifier_imt_root`, `nc_root`, `proposals`,
-`trustees`, `min_confirmations`, `title`, and `description`; the
+`trustees`, `title`, and `description`; the
 transaction's signer is recorded as the `creator` field of the
 resulting `VoteRound`. The chain derives the remaining fields
 (`vote_round_id`, `status`, `ea_pk`, `created_at_height`) at inclusion
@@ -3245,11 +3244,11 @@ section.
 |---|---|
 | The decryption threshold $t$ and trustee count $n$ | Bounds every amount-privacy claim in the protocol; see [Election Authority Key Ceremony]. |
 | The organisation acting as each trustee, its account key and its ceremony key | Allows the role separation required in [Election Authority Key Ceremony] to be checked, lets wallets verify acknowledgements, and lets any party recompute the ceremony's verification keys. |
-| The ceremony timeouts and maximum attempts | See [Election Authority Key Ceremony]. |
+| The ceremony timeouts and maximum attempts, which are chain parameters | See [Election Authority Key Ceremony]. |
 | The reveal window length, $\mathsf{reveal}\_\mathsf{end}\_\mathsf{time} - \mathsf{vote}\_\mathsf{end}\_\mathsf{time}$ | Bounds the period in which a wallet must return to reveal; see [Round Lifecycle]. |
 | The poll runner and its signing key | Establishes whose poll signature wallets recognise; see [Poll Signature]. |
 | $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
-| The key-share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
+| The trustee share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
 
 The RECOMMENDED value of $\mathsf{min}\_\mathsf{confirmations}$ is 100
 blocks.
@@ -3303,10 +3302,6 @@ the implementation.
 - **Share decomposition.** Deployed implementations have divided the
   ballot count evenly across the $N_s$ shares. [Vote Share] forbids
   this; see [Why Randomized Share Decomposition].
-- **Threshold.** The decryption threshold stated in companion documents
-  and the threshold used in deployment have differed. The value in use
-  MUST be published; see `draft-valargroup-shielded-voting-setup`
-  [^voting-setup].
 
 
 # Reference implementation
