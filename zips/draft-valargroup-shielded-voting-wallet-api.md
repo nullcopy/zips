@@ -20,11 +20,25 @@ when, they appear in all capitals.
 
 The terms below are to be interpreted as follows:
 
+Acknowledgement
+
+: A trustee's signed vote chain transaction committing to a round's
+  election authority public key. A wallet retrieves acknowledgements
+  via [Round Acknowledgements] and accepts an `ea_pk` only when every
+  trustee has acknowledged it. See [Binding to the Chain Round].
+
 Delegation
 
 : The act of proving ownership of unspent Orchard notes in the Ironwood
   pool at the snapshot height and registering a vote authority note on
   the vote commitment tree. See [^orchard-balance-proof].
+
+Final VCT root
+
+: The root of a round's vote commitment tree at the moment the round
+  leaves the ACTIVE state. Every share reveal message in the round is
+  anchored to it. See the "Round Lifecycle" section of
+  [^voting-protocol].
 
 Ironwood pool
 
@@ -33,6 +47,13 @@ Ironwood pool
   Orchard keys, notes, nullifiers, signatures or circuits refer to
   those constructions as used in the Ironwood pool. See
   [^voting-protocol].
+
+Nullifier exclusion proof
+
+: A Merkle non-membership proof, against the snapshot's nullifier
+  non-membership tree, that a note was unspent at the snapshot. A
+  wallet constructs one locally or retrieves one as specified in
+  [Nullifier Exclusion Proof Retrieval].
 
 Poll runner
 
@@ -48,6 +69,12 @@ Poll signature
   in the configuration's `poll_signature` field and verified as
   specified in [Configuration Authentication].
 
+Proposals hash
+
+: The hash of a round's proposals, computed as specified in
+  [Proposals Hash], by which the configuration's proposals are bound
+  to the chain round and to the poll signature.
+
 Relay
 
 : An untrusted store-and-forward service to which a wallet MAY hand a
@@ -55,6 +82,12 @@ Relay
   requested time. A relay constructs no proofs and receives no witness
   material. See [Share Submission] and the "Share Submission" section
   of [^voting-protocol].
+
+Reveal material
+
+: The private values a wallet must retain from vote construction until
+  every share of that vote has been revealed, listed in
+  [Reveal Material Persistence].
 
 Reveal window
 
@@ -69,6 +102,11 @@ Share
   within a vote commitment. Each share is revealed independently
   during the reveal window by a share reveal message that the wallet
   constructs itself.
+
+Share nullifier
+
+: The value a share reveal publishes to prevent a share being counted
+  twice, derived as specified in [Share Nullifier].
 
 Share reveal message
 
@@ -93,11 +131,23 @@ Vote authority note (VAN)
   carries the delegated vote weight and is consumed (nullified) when
   the holder casts a vote.
 
+Vote commitment
+
+: A commitment, appended to the vote commitment tree when a vote is
+  cast, that binds the vote's encrypted shares, proposal and decision.
+  Its opening is part of the reveal material.
+
 Vote commitment tree
 
 : An append-only Merkle tree that records vote authority notes and vote
   commitments. The tree root at a given block height serves as a public
   input to zero-knowledge proof verification.
+
+Vote configuration
+
+: The JSON document, signed by the poll runner, by which a wallet
+  discovers a vote round and the services that serve it. See
+  [Vote Configuration Format].
 
 Vote round
 
@@ -106,6 +156,19 @@ Vote round
   clients interact with exactly one vote round at a time. The round
   states and their transitions are specified in the "Round Lifecycle"
   section of [^voting-protocol].
+
+Vote server
+
+: A server exposing the chain query and transaction submission
+  endpoints specified in this document. Vote servers are not
+  authenticated; see [Binding to the Chain Round].
+
+Zcash consensus node
+
+: A node that validates the Zcash chain under the Zcash protocol. The
+  wallet's Zcash consensus node, or the light client backend it trusts
+  for Zcash state, is the source against which it verifies a round's
+  snapshot roots. See [Snapshot Verification].
 
 # Abstract
 
