@@ -24,13 +24,6 @@ Bonded validator
   module [^cosmos-staking], so that it takes part in consensus and is
   eligible to produce blocks. See [Validator].
 
-Ceremony key
-: The public key a trustee registers on the vote chain, under which the
-  encrypted shares dealt to it during the election authority key
-  ceremony are addressed. See [Onboarding Trustees] and the "Election
-  Authority Key Ceremony" section of `draft-valargroup-shielded-voting`
-  [^draft-voting-protocol].
-
 Decryption threshold ($t$)
 : The number of trustees whose partial decryptions are needed to decrypt
   a voting round's tally. Fixed from the number of trustees, as
@@ -51,9 +44,10 @@ Election authority key ceremony
   of `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Final VCT root
-: The root of a voting round's Vote Commitment Tree at the moment the
-  round leaves the ACTIVE state, to which every share reveal in the
-  round is anchored. See the "Round Lifecycle" section of
+: The root of a voting round's Vote Commitment Tree after the last
+  effective delegation or vote transaction recorded at or before the
+  round's vote end height, to which every share reveal in the round is
+  anchored. See the "Round Lifecycle" section of
   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Genesis state
@@ -83,10 +77,10 @@ Partial decryption
   [^draft-voting-protocol].
 
 Poll runner
-: The party that runs a voting round: it chooses the snapshot, reads
-  the snapshot roots, names the round's trustees, creates the round on
-  the vote chain, and publishes and signs the vote configuration. See
-  [Poll Runner].
+: The party that runs a voting round: it chooses the snapshot, names
+  the round's trustees, creates the round on the vote chain carrying
+  the snapshot's roots, and publishes and signs the vote configuration.
+  See [Poll Runner].
 
 Poll signature
 : The poll runner's signature over a voting round's defining fields, by
@@ -101,27 +95,16 @@ Ratification
   the "Ratification" section of `draft-valargroup-shielded-voting`
   [^draft-voting-protocol].
 
-Relay
-: An untrusted store-and-forward service to which a voter's wallet MAY
-  hand a finished share reveal message, together with the time at which
-  to submit it, for later submission to the vote chain. A relay
-  constructs no proofs and receives no witness material. See
-  [Relay Operator] and the "Share Submission" section of
-  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
-
-Relay operator
-: The entity that runs one or more relays. See [Relay Operator].
-
 Reveal window
-: The period, following the voting window, during which the vote chain
-  accepts share reveal transactions for a voting round. See the "Round
-  Lifecycle" section of `draft-valargroup-shielded-voting`
+: The range of vote chain heights, following the voting window, within
+  which a voting round's share reveal transactions are effective. See
+  the "Round Lifecycle" section of `draft-valargroup-shielded-voting`
   [^draft-voting-protocol].
 
 Share reveal message
 : The finished message, carrying a Vote Reveal Proof, by which one
-  encrypted share of a vote is revealed to the vote chain. See the
-  "Share Reveal Message" section of `draft-valargroup-shielded-voting`
+  encrypted share of a vote is revealed. See the "Share Reveal
+  Transaction" section of `draft-valargroup-shielded-voting`
   [^draft-voting-protocol].
 
 Snapshot
@@ -140,9 +123,28 @@ Snapshot roots
   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Trustee
-: One of the parties named in a voting round that jointly generate its
-  election authority key and each hold a share of the private key.
-  Trustees ratify the round and decrypt its tally. See [Trustee].
+: One of the parties named in a voting round's creation transaction
+  that jointly generate its election authority key and each hold a
+  share of the private key. Trustees ratify the round and decrypt its
+  tally. See [Trustee].
+
+Trustee account key
+: The Ed25519 keypair under which a trustee signs its vote chain
+  transactions. Its public key names the trustee in the round creation
+  transaction. See [Trustee].
+
+Trustee ceremony key
+: A Pallas keypair, whose public key is named in the round creation
+  transaction, under which the encrypted shares dealt to the trustee
+  during the election authority key ceremony are addressed. See
+  [Trustee].
+
+Trustee share key
+: The public key corresponding to a trustee's key share, derivable by
+  anyone from the ceremony's recorded commitments and used to verify
+  the trustee's partial decryptions. See the "Election Authority Key
+  Ceremony" section of `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol].
 
 Validator
 : An operator of the vote chain's consensus. See [Validator].
@@ -153,8 +155,9 @@ Vote Authority Note (VAN)
   section of `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Vote chain
-: The blockchain that records every voting round's delegation, vote,
-  share reveal and ceremony transactions. See [What the Chain Records].
+: The blockchain that records every voting round's transactions, in
+  order and each at a height, and validates none of them against the
+  protocol. See [What the Chain Records].
 
 Vote chain node
 : A node running the vote chain software, whether or not it is a
@@ -162,10 +165,10 @@ Vote chain node
   of the chain but takes no part in consensus.
 
 Vote Commitment Tree (VCT)
-: The append-only Merkle tree, maintained per voting round by the vote
-  chain, whose leaves are Vote Authority Notes and Vote Commitments. See
-  the "Data Structures" section of `draft-valargroup-shielded-voting`
-  [^draft-voting-protocol].
+: The append-only Merkle tree, derived per voting round by every party
+  that reads the vote chain, whose leaves are Vote Authority Notes and
+  Vote Commitments. See the "Data Structures" section of
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Vote configuration
 : The per-round document, published and signed by the poll runner, from
@@ -181,14 +184,15 @@ Voting round
   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Voting round identifier
-: The unique identifier of a voting round, derived by the vote chain
-  from the round creation transaction. See the "Poll Creation" section
-  of `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+: The unique identifier of a voting round, derived by any party from
+  the round creation transaction. See the "Poll Creation" section of
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 Voting window
-: The period during which the vote chain accepts delegation and vote
-  transactions for a voting round. See the "Round Lifecycle" section of
-  `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+: The range of vote chain heights within which a voting round's
+  delegation and vote transactions are effective. See the "Round
+  Lifecycle" section of `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol].
 
 Zcash consensus node
 : A node that validates the Zcash mainnet chain under the Zcash protocol
@@ -210,16 +214,15 @@ the election authority key ceremony — see the "Terminology" section of
 This ZIP specifies how to set up and operate a vote chain for Zcash
 shielded coinholder voting, and how to deploy and run a voting round on
 it: the genesis state and validators of the chain; the parties that run
-a voting round — the poll runner, the trustees, relay operators and
-nullifier service operators — and how each is onboarded; how those
-parties are kept separate so that no organisation both sees a voter's
-share reveals arrive, or decides which of them enter blocks, and holds
-key material that can decrypt them; and the procedures by which any
-party audits a voting round.
+a voting round — the poll runner, the trustees and nullifier service
+operators — and how each is onboarded; how validators and trustees are
+kept separate so that no organisation both decides which share reveals
+are recorded and holds key material that can decrypt them; and the
+procedures by which any party audits a voting round.
 
 The protocol itself — the cryptographic constructions, the delegation,
-vote, reveal and tally phases, and the consensus rules a voting round
-follows from creation through finalization — is specified in
+vote, reveal and tally phases, the transactions and the rules by which
+any party interprets the vote chain's record — is specified in
 `draft-valargroup-shielded-voting` [^draft-voting-protocol]. This ZIP
 does not restate those rules; it states who carries them out and what
 each of them must publish.
@@ -228,7 +231,8 @@ each of them must publish.
 # Motivation
 
 The Zcash Shielded Voting Protocol [^draft-voting-protocol] specifies
-the protocol and the consensus rules of the vote chain. Running it
+the protocol and the rules by which any party interprets the vote
+chain's record. Running it
 requires organisations to take on distinct roles, provision
 infrastructure, and publish what they did, and the protocol's privacy
 claims depend on how those roles are separated. This ZIP specifies that
@@ -246,12 +250,6 @@ operational layer.
 - The vote chain is a public ledger. Transaction contents are
   encrypted or zero-knowledge-proven, but their existence, ordering and
   block-inclusion timing are a permanent public record.
-- A relay operator learns, from each share reveal message handed to
-  it, what a chain observer learns from the same message once it is
-  recorded, plus the network origin of the wallet that handed it over
-  and the requested submission time. See [Relay Operator] and the
-  "Privacy Implications" section of `draft-valargroup-shielded-voting`
-  [^draft-voting-protocol].
 - A nullifier service operator sees the source address and time of
   each query, which reveals that a wallet is preparing to take part in
   a voting round, even where the retrieval protocol conceals which
@@ -281,8 +279,8 @@ operational layer.
 - The vote chain operates as a public, verifiable ledger: anyone can
   run a vote chain node to audit it.
 - The vote chain operates with partial validator availability.
-- No organisation acts as more than one of validator, relay operator
-  and trustee for the same voting round.
+- No organisation that operates a validator acts as a trustee of any
+  voting round on the chain it validates.
 
 
 # Non-requirements
@@ -302,39 +300,41 @@ and what it records. [Running a Voting Round] specifies how a voting
 round is deployed and conducted on such a chain: the parties that run
 it, how they are onboarded, the steps of a voting round, how
 coinholders take part, and how a voting round is verified. The chain
-records voting rounds without knowledge of who is running them: any
-number of voting rounds MAY be in progress on one chain at once, and
-creating one requires no privileged role (see the "Poll Creation"
-section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]).
+records voting rounds without knowledge of them: any number of voting
+rounds MAY be in progress on one chain at once, and creating one
+requires no privileged role (see the "Poll Creation" section of
+`draft-valargroup-shielded-voting` [^draft-voting-protocol]).
 
 ## Operating the Vote Chain
 
 ### What the Chain Records
 
-The vote chain is a purpose-built blockchain that records, for each
-voting round, the transactions the protocol defines — round creation,
-trustee registration, ceremony, acknowledgement, delegation, vote,
-share reveal and partial decryption — and maintains the per-round state
-the protocol requires (see the "Vote Chain" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol]):
+The vote chain is a purpose-built blockchain that records, in order and
+each at a block height, the transactions the protocol defines — round
+creation, cancellation, ceremony, acknowledgement, delegation, vote,
+share reveal and partial decryption — as specified in the "Transaction
+Formats" section of `draft-valargroup-shielded-voting`
+[^draft-voting-protocol]. It records them without validating them
+against the protocol: a transaction the protocol treats as ineffective
+is recorded on the same terms as any other, and the chain maintains no
+state the protocol defines (see the "Vote Chain Record" section of
+that document).
+
+Every party that reads the record derives from it, per voting round:
 
 - The **Vote Commitment Tree**: a Merkle tree of vote authority notes
   and vote commitments.
 - Three **nullifier sets**: governance nullifiers (from delegation),
   VAN nullifiers (from voting) and share nullifiers (from share
   reveals).
-- An **encrypted share accumulator** per (proposal, option position):
-  the running sum of the encrypted shares revealed at that position.
-- The round's **final VCT root**, recorded when the round enters
-  REVEALING.
-- The round's lifecycle state, its election authority key ceremony and
-  the acknowledgements that ratify it.
+- The round's lifecycle state, its election authority key ceremony,
+  the acknowledgements that ratify it, its **final VCT root**, and its
+  tally.
 
-The vote chain verifies a zero-knowledge proof for each delegation, vote
-and share reveal transaction, as specified in
-`draft-valargroup-shielded-voting` [^draft-voting-protocol]. All of
-this state is kept per voting round, and the chain does not distinguish
-voting rounds by who created them.
+A vote chain node MAY maintain these as indexes and serve them over a
+query interface (see `draft-valargroup-shielded-voting-wallet-api`
+[^draft-wallet-api]); what it serves is its own derivation, which any
+other party can check by deriving the same state from the same record.
 
 The reference implementation is a Cosmos SDK chain using CometBFT
 consensus (see [Reference implementation]). Nothing in this document
@@ -355,19 +355,15 @@ The genesis state contains:
   bonded stake. The stake bonded to each validator determines its
   consensus voting power; an even distribution across validators
   reduces the risk of consensus capture.
-- The election authority key ceremony timeouts (commitment, dealing,
-  complaint and acknowledgement) and the maximum number of ceremony
-  attempts, which are chain parameters (see the "Election Authority Key
-  Ceremony" section of `draft-valargroup-shielded-voting`
-  [^draft-voting-protocol]). A deployment MUST publish the values it
-  applies (see [Deployment]).
 - The standard module states the vote chain software requires (for the
   reference implementation, the Cosmos SDK auth, bank and staking
-  modules).
+  modules), including whatever fee schedule the chain applies to
+  recording a transaction.
 
-The genesis state pre-populates no voting rounds, no trustee
-registrations and no nullifier sets; all of these enter the chain
-through transactions after it starts producing blocks. A deployment
+The genesis state pre-populates no voting rounds; every round enters
+the record through transactions after the chain starts producing
+blocks, and the ceremony timing of each round is set by its own
+creation transaction. A deployment
 MUST publish the genesis file and the network address of at least one
 vote chain node, so that joining validators, and the vote chain nodes
 that poll runners and wallets use, can find the chain.
@@ -376,10 +372,12 @@ that poll runners and wallets use, can find the chain.
 
 A validator runs a vote chain node that takes part in consensus,
 producing and voting on blocks, and thereby determines which
-transactions enter blocks. Validators execute every state transition
-the chain defines, including the automatic combination of partial
-decryptions into a tally (see the "Tally" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol]).
+transactions are recorded and in what order. That is the whole of a
+validator's role in the protocol: validators apply none of its rules,
+need not implement any of them, and maintain no state it defines (see
+the "Vote Chain Record" section of `draft-valargroup-shielded-voting`
+[^draft-voting-protocol]). A validator's node MAY, like any vote chain
+node, derive and serve round state as an index.
 
 Each validator maintains two keypairs:
 
@@ -396,9 +394,8 @@ deployment MUST publish the stake distribution across validators, as
 that section requires, and SHOULD publish the mempool and inclusion
 counts it describes.
 
-A validator also MUST NOT be a trustee or a relay operator of any
-voting round recorded on the chain it validates; see
-[Role Separation].
+A validator MUST NOT be a trustee of any voting round recorded on the
+chain it validates; see [Role Separation].
 
 ### Onboarding Validators
 
@@ -426,30 +423,26 @@ in the election authority key ceremony.
 
 ### Role Separation
 
-For a given voting round, the set of validators, the set of relay
-operators and the set of trustees MUST be pairwise disjoint: no
-organisation MAY act in more than one of the three roles for the same
-voting round. Since validators serve every voting round on the chain, a
-validator also MUST NOT be a trustee or a relay operator of any voting
-round on it. Why each pair is kept apart is set out in
-[Why Roles Are Separated].
+The set of validators of a vote chain and the set of trustees of every
+voting round on it MUST be disjoint: no organisation MAY operate a
+validator and act as a trustee of any voting round recorded on the
+chain it validates. Why is set out in [Why Roles Are Separated].
 
 A deployment MUST publish which organisation operates each validator
 and which organisation acts as each trustee of each voting round (see
 [Deployment]), so that the disjointness of those two sets can be
-checked rather than assumed. Relay operation is permissionless (see
-[Relay Operator]), so a deployment cannot publish who operates every
-relay; the rule binds validators and trustees, which MUST NOT operate
-relays for the voting rounds they serve.
+checked rather than assumed.
 
 ## Running a Voting Round
 
 A voting round is created, run and tallied by parties that need no
 privileged standing on the vote chain: the poll runner that creates and
-signs it, the trustees that hold its key, the relay operators that
-forward share reveal messages, and the nullifier service operators that
-serve exclusion proofs. This part specifies each role, how it is
-onboarded, and the steps of a voting round from snapshot to tally.
+signs it, the trustees that hold its key, and the nullifier service
+operators that serve exclusion proofs. Voters' wallets submit every
+transaction of their own, including their share reveals, directly to a
+vote chain node; no party submits on a voter's behalf. This part
+specifies each role, how it is onboarded, and the steps of a voting
+round from snapshot to tally.
 
 ### Poll Runner
 
@@ -473,10 +466,14 @@ publish the poll runner of each voting round and its signing key (see
 The poll runner is responsible for the coordination a round needs
 outside the chain: ensuring that any nullifier service the round lists
 has ingested the snapshot before the round opens (see
-[Nullifier Service]), and that the trustees it names are registered
-and prepared to serve within the ceremony timeouts (see
-[Onboarding Trustees]). The poll runner MAY also be one of the round's
-trustees.
+[Nullifier Service]), and that the trustees it names have given it
+their keys and are prepared to serve within the ceremony's stage
+windows (see [Onboarding Trustees]). The poll runner chooses those
+windows, and the number of attempts, when it creates the round. As
+the round's creator it MAY cancel the round while it is pending (see
+the "Cancellation" section of `draft-valargroup-shielded-voting`
+[^draft-voting-protocol]). The poll runner MAY also be one of the
+round's trustees.
 
 ### Trustee
 
@@ -493,24 +490,27 @@ is the single party that configures a voting round and signs its vote
 configuration; the trustees are the $n$ parties, independent of one
 another, that jointly generate and hold its decryption key, and every
 one of them must ratify the round before it opens. The poll runner MAY
-be one of the trustees it names. A trustee also MUST NOT be a validator
-or a relay operator of the same voting round; see [Role Separation].
+be one of the trustees it names. A trustee MUST NOT be a validator of
+the vote chain; see [Role Separation].
 
-Each trustee maintains two keypairs:
+Each trustee maintains two keypairs, both of whose public keys the
+round creation transaction names:
 
-- **Account keypair**: used to submit ceremony, complaint,
-  acknowledgement and partial decryption transactions. Its address is
-  the trustee address the vote chain recognises for those
-  transactions.
-- **Ceremony key**: registered on the vote chain, under which the
-  encrypted shares dealt to the trustee during the ceremony are
-  addressed (see [Onboarding Trustees]).
+- **Trustee account key**: an Ed25519 keypair under which the trustee
+  signs its ceremony, complaint, acknowledgement, cancellation and
+  partial decryption transactions.
+- **Trustee ceremony key**: a Pallas keypair under which the encrypted
+  shares dealt to the trustee during the ceremony are addressed.
+
+The ceremony also gives each trustee a **key share** and a public
+**trustee share key**, against which its partial decryptions are
+verified.
 
 A trustee's duties for a voting round are to:
 
 1. Take part in each stage of the election authority key ceremony
-   within the published commitment, dealing, complaint and
-   acknowledgement timeouts, and in each restarted attempt.
+   within the stage windows the round creation transaction sets, and
+   in each further attempt on the ceremony's grid if an attempt fails.
 2. Read the round's snapshot roots from a Zcash consensus node under
    its own control and confirm that they match the round, as specified
    in the "Reading the Snapshot Roots" section of
@@ -525,88 +525,52 @@ A trustee's duties for a voting round are to:
    round opens only once every trustee has ratified it.
 4. Erase the ceremony material the protocol requires it to erase once
    it has dealt its shares.
-5. Submit a partial decryption, with its proof, for each accumulator to
-   be decrypted while the round is TALLYING.
+5. After the reveal window closes, aggregate the round's effective
+   share reveals itself from the record and record a partial
+   decryption transaction, with its proofs, for every position to be
+   decrypted.
 6. Destroy its key share at the end of the deployment's published
    retention period (see the "Election Authority Key Custody" section
    of `draft-valargroup-shielded-voting` [^draft-voting-protocol]).
 
 A trustee that does not want to serve a round it is named in simply
-does not ratify it, and the round never opens. Every trustee's
-participation in every stage and attempt of a ceremony is a matter of
-chain record; a poll runner is under no obligation to name again a
+does not ratify it, and the round never opens; it MAY also record a
+cancellation transaction so that the round is withdrawn at once rather
+than at the end of the ceremony grid (see the "Cancellation" section
+of `draft-valargroup-shielded-voting` [^draft-voting-protocol]). Every
+trustee's participation in every stage and attempt of a ceremony is a
+matter of record; a poll runner is under no obligation to name again a
 trustee that has caused ceremonies to fail.
 
 ### Onboarding Trustees
 
-Trustee registration is permissionless. Any account MAY submit a
-trustee registration transaction, which binds a ceremony key to the
-account's address; from then on the vote chain recognises that address
-for the ceremony, complaint, acknowledgement and partial decryption
-transactions of any voting round that names it. A party becomes a
-trustee of a voting round by being named in that round's creation
-transaction (see [Poll Runner]); the trustee set of a round is fixed at
-creation, and a party registered afterwards receives no share for that
-round.
+There is no trustee registry on the vote chain. A party becomes a
+trustee of a voting round by being named, with its two public keys, in
+that round's creation transaction (see [Poll Runner]); the trustee set
+of a round is fixed at creation.
 
 A prospective trustee:
 
-1. **Generates its keypairs**: an account keypair and a ceremony key
-   (see [Trustee]).
-2. **Funds its account** so that it can submit its ceremony and tally
+1. **Generates its keypairs**: a trustee account key and a trustee
+   ceremony key (see [Trustee]).
+2. **Funds its account** so that it can record its ceremony and tally
    transactions. Provisioning trustee accounts is an operational matter
    for whoever runs the poll, and confers no consensus voting power: a
    trustee is not a validator.
-3. **Registers on chain** by submitting the trustee registration
-   transaction.
-4. **Gives the poll runner** its account address and the identity of
-   the operating organisation, through a channel that authenticates
-   it, so that the poll runner can name it and publish it.
+3. **Gives the poll runner** both public keys and the identity of the
+   operating organisation, through a channel that authenticates it, so
+   that the poll runner can name it and publish it.
 
-A poll runner MUST NOT name a trustee whose ceremony key is not
-registered: the chain rejects the round creation transaction (see the
-"Poll Creation" section of `draft-valargroup-shielded-voting`
-[^draft-voting-protocol]), and such a trustee could not receive the
-shares dealt to it.
+A poll runner MUST NOT name a trustee whose ceremony key it has not
+received through such a channel: a trustee that does not hold the
+corresponding private key cannot decrypt the shares dealt to it, and
+the ceremony fails.
 
 A deployment MUST publish the trustee set of each voting round, with
 each trustee's operating organisation, account key and ceremony key,
 as part of the round's deployment record (see [Deployment]), so that
 any party can check role separation, verify acknowledgements, and
-recompute the ceremony's verification keys.
-
-### Relay Operator
-
-A relay operator runs one or more relays. A relay receives a finished
-share reveal message together with the time at which the wallet asks
-for it to be submitted, holds it until that time, and submits it to a
-vote chain node unaltered. It receives no witness material and
-constructs no proofs. A wallet hands a relay at most one share of any
-vote, over a network connection used for no other share of that vote,
-as specified in the "Share Submission" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol], which also
-states what a relay MUST and MUST NOT require of the wallets it serves.
-
-Relay operation is permissionless: anyone MAY run a relay, and a wallet
-MAY use any relay it is configured with. A poll runner MAY list relays
-it knows of in the vote configuration (see
-[Vote Configuration Publication]); a poll runner that does so SHOULD
-list at least $N_s$ of them, operated independently of one another,
-because a wallet MUST select a distinct relay for each of its $N_s$
-share reveal messages and with fewer can relay only some of its shares.
-Listing a relay is not a statement about who operates it, and a
-wallet's choice is not limited to the list.
-
-A relay operator is trusted for availability only. It learns, from the
-message it holds, what a chain observer learns from the same message
-once it is recorded, plus the network origin of the wallet that handed
-it over and the requested submission time. A relay holding one share of
-a vote can group nothing.
-
-The role is OPTIONAL: a wallet that is online across its submission
-schedule submits its share reveal messages directly. A relay operator
-also MUST NOT be a validator or a trustee of a voting round for which
-it relays; see [Role Separation].
+recompute the trustee share keys.
 
 ### Nullifier Service Operator
 
@@ -665,9 +629,9 @@ signs it with its poll signature (see the "Poll Signature" section of
 `draft-valargroup-shielded-voting` [^draft-voting-protocol]). The
 configuration carries the round's defining fields and the network
 endpoints a wallet needs: vote chain nodes to query and submit
-through, nullifier services, and any relays the poll runner lists.
-Wallets fetch the configuration from that channel; the vote chain
-itself provides no service discovery.
+through, and nullifier services. Wallets fetch the configuration from
+that channel; the vote chain itself provides no service discovery, and
+a wallet MAY submit through any vote chain node, including its own.
 
 The poll runner MAY publish and sign the configuration as soon as the
 round is created, since the signature does not cover the election
@@ -686,9 +650,9 @@ several poll runners at once, each with its own configuration.
 ### Conducting a Voting Round
 
 The rules a voting round follows — its proposals and snapshot, its
-creation, the poll signature, its lifecycle states, the election
-authority key ceremony and the unanimous ratification that opens
-voting — are consensus rules of the vote chain and rules for wallets,
+creation, the poll signature, its lifecycle, the election authority
+key ceremony, the unanimous ratification that opens voting and
+cancellation — are rules any party applies to the vote chain's record,
 specified in the "Voting Round" section of
 `draft-valargroup-shielded-voting` [^draft-voting-protocol]. This
 section states who carries out each step.
@@ -703,12 +667,14 @@ section states who carries out each step.
    list so that their ingest and export pipelines (see
    [Nullifier Service]) have run to the snapshot before the round
    opens.
-2. **Creation.** The poll runner submits the round creation
+2. **Creation.** The poll runner records the round creation
    transaction, carrying the snapshot, the roots, the proposals, the
-   deadlines and the names of the trustees (see [Onboarding Trustees]
-   and the "Poll Creation" section of
+   deadlines as vote chain heights, the ceremony's stage window and
+   attempt count, and the trustees with their keys (see
+   [Onboarding Trustees] and the "Poll Creation" section of
    `draft-valargroup-shielded-voting` [^draft-voting-protocol]). The
-   round enters PENDING and the ceremony starts automatically.
+   round is PENDING from the height at which it is recorded, and the
+   ceremony's first stage window opens in the next block.
 3. **Configuration.** The poll runner publishes and signs the vote
    configuration (see [Vote Configuration Publication]). Wallets verify
    the poll signature, verify the roots against a Zcash consensus node
@@ -717,32 +683,35 @@ section states who carries out each step.
    Signature" section of `draft-valargroup-shielded-voting`
    [^draft-voting-protocol]).
 4. **Ceremony and ratification.** The trustees run the election
-   authority key ceremony among themselves on the vote chain within
-   the published timeouts. Each verifies the snapshot roots against a
-   Zcash consensus node under its own control, verifies its key share,
-   and acknowledges it on chain. The acknowledgements ratify the round;
-   it enters ACTIVE only once every trustee has ratified it. A round
-   whose ceremony fails on its final attempt, or that some trustee
-   never ratifies, never opens. Validators take no part in the
-   ceremony.
-5. **Voting.** While the round is ACTIVE, until `vote_end_time`, the
-   chain accepts delegation and vote transactions from coinholders
-   (see [Coinholder Participation]).
-6. **Reveal.** At `vote_end_time` the round enters REVEALING and the
-   VCT is frozen at its final root. Until `reveal_end_time`, wallets
-   construct their share reveal messages and submit them, directly or
-   through relays; relay operators submit each message they hold at its
-   requested time. A deployment SHOULD publish, from more than one
-   operator, the mempool and inclusion counts described in the
-   "Transaction Inclusion" section of
-   `draft-valargroup-shielded-voting` [^draft-voting-protocol], which
-   also states what validators can and cannot do to a round at this
-   stage.
-7. **Tally.** After `reveal_end_time` the round enters TALLYING; the
-   trustees submit partial decryptions, the chain combines them and
-   publishes the tally, and the round is FINALIZED. A round in which
-   fewer than $t$ partial decryptions arrive within the chain's tally
-   timeout finalizes without a tally.
+   authority key ceremony among themselves on the vote chain, each
+   stage within its window on the ceremony grid. Each verifies the
+   snapshot roots against a Zcash consensus node under its own
+   control, verifies its key share, and acknowledges it on chain. The
+   acknowledgements ratify the round; it is ACTIVE from the height at
+   which the last of them is recorded. A round whose ceremony fails on
+   its final attempt, or that some trustee never ratifies, never
+   opens; a trustee or the poll runner MAY cancel a pending round
+   rather than wait for that. Validators take no part in the ceremony.
+5. **Voting.** While the round is ACTIVE, until `vote_end_height`,
+   coinholders' delegation and vote transactions are effective (see
+   [Coinholder Participation]).
+6. **Reveal.** After `vote_end_height` the round is REVEALING and its
+   final VCT root is fixed. Until `reveal_end_height`, wallets
+   construct their share reveal messages and submit them, each wallet
+   its own, directly to a vote chain node at the heights it draws. A
+   deployment SHOULD publish, from more than one operator, the mempool
+   and inclusion counts described in the "Transaction Inclusion"
+   section of `draft-valargroup-shielded-voting`
+   [^draft-voting-protocol], which also states what validators can and
+   cannot do to a round at this stage.
+7. **Tally.** After `reveal_end_height` the round is TALLYING. Each
+   trustee aggregates the effective share reveals from the record and
+   records its partial decryptions; once at least $t$ trustees have
+   done so, any party computes the tally from the record. The
+   deployment publishes the result it computed and the partial
+   decryptions it used. A round in which fewer than $t$ trustees ever
+   record partial decryptions has no tally, and the record shows which
+   trustees did not.
 
 ### Coinholder Participation
 
@@ -766,8 +735,7 @@ before the snapshot height.
 
 A wallet obtains the vote configuration for the voting round (see
 [Vote Configuration Publication]), which lists the vote chain nodes,
-the nullifier services, any relays the poll runner lists, and the
-protocol versions in use. The configuration format, the wallet-side
+the nullifier services, and the protocol versions in use. The configuration format, the wallet-side
 validation rules and the verification of the poll signature are
 specified in `draft-valargroup-shielded-voting-wallet-api`
 [^draft-wallet-api]. Before taking part, the wallet verifies the
@@ -795,11 +763,12 @@ wallet performs:
 
 2. **Submit a delegation transaction.** Construct a Delegation Proof
    asserting ownership of the eligible note without revealing which
-   note it is, and submit the transaction to a vote chain node listed
-   in the vote configuration. This produces a Vote Authority Note (VAN)
-   on the Vote Commitment Tree. The proof construction and the on-chain
-   handling are specified in the "Delegation Phase" section of
-   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+   note it is, and submit the transaction to a vote chain node. Once
+   recorded and effective, it inserts a Vote Authority Note (VAN) into
+   the Vote Commitment Tree. The proof construction and the rules that
+   make the transaction effective are specified in the "Delegation
+   Phase" section of `draft-valargroup-shielded-voting`
+   [^draft-voting-protocol].
 
 For each proposal the coinholder votes on, the wallet performs:
 
@@ -809,78 +778,83 @@ For each proposal the coinholder votes on, the wallet performs:
    option, as specified in the "Vote Phase" section of
    `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
-4. **Reveal the vote's shares.** At `vote_end_time` the voting round
-   enters REVEALING and the VCT is frozen. The wallet must come back online at
-   least once during the reveal window, before `reveal_end_time`: it
+4. **Reveal the vote's shares.** After `vote_end_height` the voting
+   round is REVEALING and the VCT is frozen. The wallet must come back
+   online during the reveal window, before `reveal_end_height`: it
    obtains the round's final VCT root and a Merkle path for its Vote
    Commitment against that root, constructs a Vote Reveal Proof for
    each of the vote's $N_s$ shares, and draws a submission schedule.
-   It then either submits the share reveal messages itself at the
-   scheduled times, remaining online across the schedule, or hands
-   each message, with its scheduled time, to a distinct relay (see
-   [Relay Operator]) over a separate network connection per message.
-   No witness material leaves the wallet in either case. A wallet that
-   does not return during the reveal window loses its vote. Proof
-   construction, the independence rules and the schedule are specified
-   in the "Share Submission" and "Submission Timing" sections of
-   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
+   It then submits each share reveal message itself, at its drawn
+   height, over a separate network connection per message, in
+   background sessions where the platform allows and otherwise on
+   later opens. No other party submits on its behalf and no witness
+   material leaves the wallet. A wallet that does not return during
+   the reveal window loses its vote. Proof construction, the
+   independence rules, the schedule and the catch-up rules are
+   specified in the "Share Submission" and "Submission Timing"
+   sections of `draft-valargroup-shielded-voting`
+   [^draft-voting-protocol].
 
-After the voting round is finalized, the coinholder may verify the
-tally following [Verification and Auditing].
+Once the voting round has a tally, the coinholder may verify it
+following [Verification and Auditing].
 
 ### Verification and Auditing
 
 The vote chain is publicly readable. Any party running a vote chain
 node — a validator, a poll runner, a trustee or an independent observer
-— can verify a voting round by replaying chain state. The checks a
-verifier MUST perform, their order, and what each does and does not
-establish are specified in the "Verification" section of
-`draft-valargroup-shielded-voting` [^draft-voting-protocol]; this
-section states how the operator of a vote chain node carries them out,
-in three layers.
+— can verify a voting round by reading the record and applying the
+protocol's rules to it. The checks a verifier MUST perform, their
+order, and what each does and does not establish are specified in the
+"Verification" section of `draft-valargroup-shielded-voting`
+[^draft-voting-protocol]; this section states how the operator of a
+vote chain node carries them out. Nothing below is done by the chain:
+a verifier that takes a vote chain node's answer has taken that
+operator's derivation, not verified the round.
 
-- **Per-transaction proof verification.** Each delegation, vote and
-  share reveal transaction carries a zero-knowledge proof that the
-  chain checks at inclusion against the out-of-circuit verification
-  rules of the "Delegation Proof", "Vote Proof" and "Vote Reveal Proof"
-  sections of `draft-valargroup-shielded-voting`
-  [^draft-voting-protocol]. Those rules apply the claim proof
+- **Effectiveness of every transaction.** The verifier classifies each
+  recorded transaction of the round as effective or not, in record
+  order, by the rules of the "Effective Transactions" section of
+  `draft-valargroup-shielded-voting` [^draft-voting-protocol]: the
+  round creation and any cancellation, each ceremony stage and the
+  acknowledgements, and each delegation, vote and share reveal
+  transaction with its zero-knowledge proof verified and its
+  out-of-circuit checks applied. Those checks apply the claim proof
   verification and the non-membership checks of
   `draft-valargroup-orchard-balance-proof` [^draft-balance-proof]
-  transitively, so replaying every transaction re-verifies all three
-  layers of proof at once.
+  transitively, so this step re-verifies all three layers of proof at
+  once. It derives the round's state, election authority key, Vote
+  Commitment Tree and final root.
 
-- **Nullifier set integrity.** The chain maintains three nullifier
-  sets — governance nullifiers (from delegation), VAN nullifiers (from
-  voting) and share nullifiers (from share reveals) — and rejects any
-  transaction that would re-use an already published nullifier. The
-  verifier confirms set integrity by replaying every accepted
-  transaction and checking that no nullifier appears twice.
+- **Nullifier set integrity.** The verifier derives the three
+  nullifier sets — governance nullifiers (from delegation), VAN
+  nullifiers (from voting) and share nullifiers (from share reveals) —
+  from the effective transactions and confirms that no nullifier
+  appears twice.
 
-- **Tally correctness.** The verifier confirms that every share reveal
-  transaction in the round is anchored to the round's final VCT root,
-  re-aggregates the revealed ciphertexts into a per-(proposal, option
-  position) accumulator for each option position, verifies the proof
-  of each stored partial decryption, and recomputes the published
-  per-option totals from the partial decryptions following the tally
-  procedure in the "Tally" section of
+- **Tally correctness.** The verifier confirms that every effective
+  share reveal is anchored to the round's final VCT root, aggregates
+  the revealed ciphertexts into one ciphertext per (proposal, option
+  position), verifies the proof of each recorded partial decryption
+  against its own aggregates, and recomputes the per-option totals
+  from the partial decryptions following the "Tally" section of
   `draft-valargroup-shielded-voting` [^draft-voting-protocol].
 
 The three layers verify that the transactions in a round are well
-formed and correctly accumulated *with respect to* the round's snapshot
+formed and correctly aggregated *with respect to* the round's snapshot
 roots. They do not establish that those roots are correct: the roots
-are supplied as input at round creation and are not validated by
-consensus. Confirming them requires reading both roots from a Zcash
+are supplied as input at round creation and nothing in the record
+checks them. Confirming them requires reading both roots from a Zcash
 consensus node under the verifier's own control and comparing them
 with the round's, by the procedure in the "Reading the Snapshot Roots"
 section of `draft-valargroup-shielded-voting` [^draft-voting-protocol],
 which also establishes that the round is well formed. A verification of
 a round is incomplete without it.
 
-A round that finalized without a tally (see the "Round Lifecycle"
-section of `draft-valargroup-shielded-voting` [^draft-voting-protocol])
-verifies as having no tally; this is itself a verifiable property of
-chain state.
+A round that has no tally, because fewer than $t$ trustees recorded
+partial decryptions, or that was cancelled or failed (see the "Round
+Lifecycle" section of `draft-valargroup-shielded-voting`
+[^draft-voting-protocol]), verifies as such; this is itself a property
+of the record.
 
 The procedures above verify the transactions that are present. They
 cannot establish that no transaction is missing; see the "Transaction
@@ -892,27 +866,23 @@ Inclusion" section of `draft-valargroup-shielded-voting`
 
 ## Why Roles Are Separated
 
-Three roles are held by different organisations: the validator that
-decides which transactions enter blocks, the relay operator that
-receives voters' finished share reveal messages, and the trustee that
-holds a share of the election authority key. No single role recovers a
-voter's balance or decision. Two pairs do:
+Two roles are held by different organisations: the validator that
+decides which transactions are recorded, and the trustee that holds a
+share of the election authority key. Neither alone recovers a voter's
+balance or decision. Together they can act on one: validators and $t$
+trustees could decrypt share reveals as they arrive and exclude them by
+the option they support and by their weight, whereas validators alone
+can exclude only by proposal, by arrival time, by network origin or
+wholesale (see the "Transaction Inclusion" section of
+`draft-valargroup-shielded-voting` [^draft-voting-protocol]).
 
-- **Validators and $t$ trustees** could decrypt share reveals as they
-  arrive and exclude them by the option they support and by their
-  weight. Validators alone can exclude only by proposal, by arrival
-  time, by network origin or wholesale (see the "Transaction Inclusion"
-  section of `draft-valargroup-shielded-voting`
-  [^draft-voting-protocol]).
-- **Relay operators and $t$ trustees** could group a voter's shares by
-  the metadata relays see — network origin and requested submission
-  time — and decrypt them, recovering the balance that the
-  decomposition into shares exists to hide.
-
-Held by one organisation, either pair acts with no collusion required.
+Held by one organisation, the pair acts with no collusion required.
 Keeping the roles apart makes a coalition necessary, and publishing the
 validators and trustees of a voting round makes their disjointness
-checkable.
+checkable. There is no third role to separate: no party other than the
+voter's wallet holds a share reveal message before it is recorded, and
+the vote chain node a wallet submits through sees a single submission's
+origin and nothing else.
 
 ## Other Design Choices
 
@@ -930,8 +900,10 @@ corresponding requirement on coinholders is stated in [Eligibility].
 **A general-purpose consensus framework**: the reference vote chain is
 built on the Cosmos SDK, which provides a BFT consensus engine,
 validator lifecycle management (bonding, jailing for missed blocks,
-consensus power distribution) and a transaction pipeline that can be
-extended with the protocol's transaction types and proof verification.
+consensus power distribution) and a transaction pipeline. Because the
+chain records the protocol's transactions without validating them, the
+framework needs no protocol-specific extension beyond carrying an
+opaque payload.
 
 **Stake determines voting power**: bonding determines which validators
 take part in consensus, enables jailing of validators that miss blocks,
@@ -939,13 +911,14 @@ and, where stake is evenly split, gives each validator a roughly equal
 chance of proposing a block — not important for correctness, but
 important for liveness.
 
-**Permissionless voting rounds and registrations**: the chain grants no
-account the right to create voting rounds or to admit trustees, so
-there is no privileged key whose compromise would let an attacker deny
-or misconfigure a voting round for everyone, and several poll runners
-can use one chain at once. What makes a voting round genuine to a
-wallet is the poll signature and the trustees' acknowledgements, both
-of which the wallet verifies, not the account that created it.
+**Permissionless voting rounds**: the chain grants no account the
+right to create voting rounds or to admit trustees, and keeps no
+registry of either, so there is no privileged key whose compromise
+would let an attacker deny or misconfigure a voting round for everyone,
+and several poll runners can use one chain at once. What makes a voting
+round genuine to a wallet is the poll signature and the trustees'
+acknowledgements, both of which the wallet verifies, not the account
+that created it.
 
 
 # Deployment
@@ -959,16 +932,16 @@ of this document.
 |---|---|
 | The organisation operating each validator, and the stake distribution across validators | Establishes the validator set and the coalition size required to exclude transactions; see the "Transaction Inclusion" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
 | The genesis file and the network address of at least one vote chain node | Lets validators, poll runners and wallets find the chain; see [Genesis]. |
-| The election authority key ceremony timeouts and the maximum number of ceremony attempts | Chain parameters fixed in the genesis state; see [Genesis] and the "Election Authority Key Ceremony" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
-| For each voting round, the organisation acting as each trustee, its account key and its ceremony key | Allows the separation required in [Role Separation] to be checked, lets wallets verify acknowledgements, and lets any party recompute the ceremony's verification keys; see [Onboarding Trustees]. |
+| The vote chain's block rate | Converts the heights in which the protocol states every deadline to time, for voters and for wallets' submission schedules. |
+| For each voting round, its ceremony stage window and attempt count | Round creation fields that set the ceremony grid; see the "Election Authority Key Ceremony" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
+| For each voting round, the organisation acting as each trustee, its account key and its ceremony key | Allows the separation required in [Role Separation] to be checked, lets wallets verify acknowledgements, and lets any party recompute the trustee share keys; see [Onboarding Trustees]. |
 | For each voting round, the poll runner and its signing key | Establishes whose poll signature wallets recognise; see [Vote Configuration Publication]. |
 | For each voting round, the reveal window length | Bounds the period in which a wallet must return to reveal; see the "Round Lifecycle" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
 | The retention period for trustees' key shares | Bounds the period over which amount-privacy claims hold; see the "Election Authority Key Custody" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
 | Software versions for the chain, circuits and client library | Required to reproduce or audit a voting round. |
 
-The validators and the trustees of a voting round MUST be disjoint, and
-validators and trustees MUST NOT operate relays for it (see
-[Role Separation]). The "Deployment" section of
+The validators of the chain and the trustees of every voting round on
+it MUST be disjoint (see [Role Separation]). The "Deployment" section of
 `draft-valargroup-shielded-voting` [^draft-voting-protocol] lists the
 protocol parameters, and the round parameters above alongside the
 rules they parameterise; a deployment publishes each value once, and
@@ -977,8 +950,11 @@ the two lists are to be read as one.
 
 # Reference implementation
 
-- [^ref-vote-sdk] — Cosmos SDK vote chain implementing the chain-side
-  state, the election authority key ceremony and the tally.
+- [^ref-vote-sdk] — Cosmos SDK vote chain. It validates transactions
+  and maintains round state and the tally in consensus, which the
+  protocol no longer requires of a vote chain; see the "Vote Chain
+  Record" section of `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol].
 - [^ref-nullifier-pir] — PIR server and client for privately
   retrieving nullifier non-membership proofs.
 
@@ -999,8 +975,8 @@ the two lists are to be read as one.
   servers from independent implementations can interoperate.
 - **Implementation diversity**: a result is described as coinholder
   sentiment, but where one client is the only practical way to vote, its
-  defaults — how it splits shares, which relays it uses, when it
-  submits — are the protocol as every voter experiences it. The
+  defaults — how it splits shares, when it submits, how it catches up
+  — are the protocol as every voter experiences it. The
   conditions under which a result may be described as representative are
   not specified. Requiring that some number of independent
   implementations be *available* is not checkable, and is met by two
@@ -1008,14 +984,12 @@ the two lists are to be read as one.
   form would bound the share of ballots, or of voting weight, cast
   through any one implementation, and would bind the deployment that
   publishes the result.
-- **Relay service interface**: the interface by which a wallet hands a
-  share reveal message and its requested submission time to a relay
-  (see [Relay Operator]) is not specified in any ZIP. The protocol
-  draft places it with this document and constrains it — no client
-  authentication, no identifier that persists across submissions, the
-  message submitted unaltered — but does not define it. A normative
-  form is needed before wallets and relays from independent
-  implementations can interoperate.
+- **Spam and fees**: because the chain records transactions the
+  protocol treats as ineffective, the only bound on the record's growth
+  is the fee the chain charges to record a transaction. What fee
+  schedule a deployment applies, and how voters' wallets obtain the
+  funds to pay it without linking a payment to a vote, are not
+  specified.
 
 
 # References
