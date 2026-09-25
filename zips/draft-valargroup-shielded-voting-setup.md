@@ -355,6 +355,18 @@ The genesis state contains:
   bonded stake. The stake bonded to each validator determines its
   consensus voting power; an even distribution across validators
   reduces the risk of consensus capture.
+- The **target block interval**: the consensus timing configuration
+  the chain launches with, from which its block rate follows (for the
+  reference implementation, CometBFT's consensus timeouts). Every
+  deadline in the protocol is a vote chain height (see the "Round
+  Lifecycle" section of `draft-valargroup-shielded-voting`
+  [^draft-voting-protocol]), and every round on the chain inherits
+  this interval for converting heights to time; a poll runner cannot
+  choose a different one. The consensus engine does not guarantee the
+  interval — the observed block rate drifts with validator
+  availability and network conditions — so what is fixed here is a
+  target, heights remain the only consensus-level measure of time,
+  and parties that present heights as times present estimates.
 - The standard module states the vote chain software requires (for the
   reference implementation, the Cosmos SDK auth, bank and staking
   modules), including whatever fee schedule the chain applies to
@@ -932,7 +944,7 @@ of this document.
 |---|---|
 | The organisation operating each validator, and the stake distribution across validators | Establishes the validator set and the coalition size required to exclude transactions; see the "Transaction Inclusion" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
 | The genesis file and the network address of at least one vote chain node | Lets validators, poll runners and wallets find the chain; see [Genesis]. |
-| The vote chain's block rate | Converts the heights in which the protocol states every deadline to time, for voters and for wallets' submission schedules. |
+| The target block interval | A chain parameter fixed at genesis (see [Genesis]); converts the heights in which the protocol states every deadline to time, for voters and for wallets' submission schedules, and is carried to wallets in the vote configuration. |
 | For each voting round, its ceremony stage window and attempt count | Round creation fields that set the ceremony grid; see the "Election Authority Key Ceremony" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
 | For each voting round, the organisation acting as each trustee, its account key and its ceremony key | Allows the separation required in [Role Separation] to be checked, lets wallets verify acknowledgements, and lets any party recompute the trustee share keys; see [Onboarding Trustees]. |
 | For each voting round, the poll runner and its signing key | Establishes whose poll signature wallets recognise; see [Vote Configuration Publication]. |
