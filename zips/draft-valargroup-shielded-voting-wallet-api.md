@@ -463,7 +463,7 @@ participate in the round.
 | `nullifier_imt_root`               | string           | Base64-encoded 32-byte nullifier non-membership tree root at the snapshot.                                                     |
 | `vote_end_height`                  | integer          | Vote chain block height after which delegation and vote transactions are no longer effective; the round is REVEALING above it. |
 | `reveal_end_height`                | integer          | Vote chain block height after which share reveal transactions are no longer effective; the round is TALLYING above it.        |
-| `block_time_seconds`               | number           | The vote chain's expected block interval, informational and not signed. A wallet uses it to present heights as times and to size its submission schedule; see [Submission Timing]. |
+| `block_time_seconds`               | number           | The vote chain's target block interval in seconds: the chain parameter the deployment published for the chain, as specified in the "Genesis" section of [^voting-setup]. Informational and not signed. A wallet uses it to present heights as estimated times and to size its submission schedule; see [Submission Timing]. |
 | `proposals`                        | array            | Ordered list of proposals. Each has `id` (integer, 1-indexed), `title` (string), `description` (string), and `options` (array of `{index, label}`). |
 | `trustees`                         | array            | The round's trustees, in the order the round creation transaction names them and the order hashed by [Trustees Hash]. Each entry has `label` (string) and `account_pk` (base64, the 32-byte Ed25519 trustee account key under which the trustee signs its chain transactions). |
 | `supported_versions.pir`           | array of strings | PIR retrieval scheme versions supported by the servers (e.g., `["v0", "v1"]`).                                                 |
@@ -1513,7 +1513,8 @@ volumes involved.
 - [Share Status] lets a wallet confirm inclusion only by disclosing
   which nullifiers are its own. A private-retrieval confirmation
   mechanism is an open issue in [^voting-protocol].
-- `block_time_seconds` is unsigned and informational. A wallet that
+- `block_time_seconds` is unsigned and informational, and the chain's
+  observed interval drifts from the published target. A wallet that
   sizes its submission schedule from a wrong value spreads its
   submissions badly; a wallet SHOULD check it against the interval it
   observes between vote chain blocks, but no endpoint exposes block
