@@ -799,8 +799,10 @@ For each proposal the coinholder votes on, the wallet performs:
    It then submits each share reveal message itself, at its drawn
    height, over a separate network connection per message, in
    background sessions where the platform allows and otherwise on
-   later opens. No other party submits on its behalf and no witness
-   material leaves the wallet. A wallet that does not return during
+   later opens; a voter who has chosen express reveal for the vote,
+   after being told its cost, has all of them submitted in that one
+   session instead. No other party submits on its behalf and no
+   witness material leaves the wallet. A wallet that does not return during
    the reveal window loses its vote. Proof construction, the
    independence rules, the schedule and the catch-up rules are
    specified in the "Share Submission" and "Submission Timing"
@@ -950,6 +952,7 @@ of this document.
 | For each voting round, the poll runner and its signing key | Establishes whose poll signature wallets recognise; see [Vote Configuration Publication]. |
 | For each voting round, the reveal window length | Bounds the period in which a wallet must return to reveal; see the "Round Lifecycle" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
 | The retention period for trustees' key shares | Bounds the period over which amount-privacy claims hold; see the "Election Authority Key Custody" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
+| For each voting round, the proportion of votes revealed by express reveal | Bounds the votes whose weight a party holding $t$ key shares can recover from the record; see the "Share Submission" section of `draft-valargroup-shielded-voting` [^draft-voting-protocol]. |
 | Software versions for the chain, circuits and client library | Required to reproduce or audit a voting round. |
 
 The validators of the chain and the trustees of every voting round on
@@ -962,11 +965,8 @@ the two lists are to be read as one.
 
 # Reference implementation
 
-- [^ref-vote-sdk] — Cosmos SDK vote chain. It validates transactions
-  and maintains round state and the tally in consensus, which the
-  protocol no longer requires of a vote chain; see the "Vote Chain
-  Record" section of `draft-valargroup-shielded-voting`
-  [^draft-voting-protocol].
+- [^ref-vote-sdk] — Cosmos SDK vote chain, expected to be adapted to
+  this specification.
 - [^ref-nullifier-pir] — PIR server and client for privately
   retrieving nullifier non-membership proofs.
 
