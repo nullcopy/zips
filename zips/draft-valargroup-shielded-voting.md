@@ -1791,7 +1791,7 @@ the rest.
 
 Heights below are vote chain block heights, which is what an observer
 of the record measures. A client converts between heights and time
-using the vote chain's published block rate (see [Deployment]).
+using the vote chain's target block interval (see [Chain parameters]).
 
 Let $H_{\mathsf{end}}$ be the round's
 $\mathsf{reveal}\_\mathsf{end}\_\mathsf{height}$, let $H_0$ be the
@@ -3833,14 +3833,26 @@ section.
 | Ballot unit | 12,500,000 zatoshi | 0.125 ZEC per ballot; see [Ballot Scaling]. |
 | Share range | $[0, 2^{30})$ | Per-share plaintext bound. |
 | Decomposition | Randomized | MUST satisfy [Vote Share]; even splitting is forbidden. |
-| $\Delta$ | One hour of blocks at the published block rate | Safety margin before $\mathsf{reveal}\_\mathsf{end}\_\mathsf{height}$, in blocks; see [Submission Timing]. |
+| $\Delta$ | One hour of blocks at the target block interval | Safety margin before $\mathsf{reveal}\_\mathsf{end}\_\mathsf{height}$, in blocks; see [Submission Timing]. |
 | $\mathsf{MAX}\_\mathsf{DELAY}$ | $W / 4$ | Delay draws above this are discarded and redrawn. |
+
+## Chain parameters
+
+The vote chain's **target block interval** is a parameter of the chain,
+fixed at its genesis and published by its deployment, as specified in
+the "Genesis" section of `draft-valargroup-shielded-voting-setup`
+[^voting-setup]. Every round on the chain inherits it. This ZIP
+consumes it in two places: $\Delta$ is stated as a number of blocks
+derived from it, and the submission schedule in [Submission Timing]
+is drawn in blocks and presented to voters as time through it. The
+interval is a target, not a guarantee; heights are the only
+consensus-level measure of time in this ZIP, and a time derived from a
+height is an estimate.
 
 ## Round parameters
 
 | Parameter | Why it is published |
 |---|---|
-| The vote chain's block rate | Converts the heights in this ZIP to time for voters and for the submission schedule; see [Submission Timing]. |
 | The decryption threshold $t$ and trustee count $n$ | Bounds every amount-privacy claim in the protocol; see [Election Authority Key Ceremony]. |
 | The organisation acting as each trustee, its account key and its ceremony key | Allows the role separation required in [Requirements] to be checked, lets wallets verify acknowledgements, and lets any party recompute the trustee share keys. |
 | `stage_window` and `max_attempts` | Round creation fields that set the ceremony grid; see [Election Authority Key Ceremony]. |
