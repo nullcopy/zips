@@ -34,6 +34,13 @@ Delegation
   pool at the snapshot height and registering a vote authority note on
   the vote commitment tree. See [^orchard-balance-proof].
 
+Express reveal
+
+: A voter's per-vote choice to have the vote's $N_s$ share reveal
+  messages submitted within a single session rather than across the
+  reveal window, at a stated privacy cost. See [Submission Timing] and
+  the "Share Submission" section of [^voting-protocol].
+
 Final VCT root
 
 : The root of a round's vote commitment tree after the last effective
@@ -201,7 +208,7 @@ conventions, and discovery mechanism needed to participate in a vote.
 
 Versioning fields in the vote configuration allow the protocol to evolve
 (new PIR schemes, circuit versions, tally methods) while maintaining
-backwards compatibility with deployed wallets.
+compatibility with wallets already released.
 
 # Requirements
 
@@ -217,6 +224,9 @@ vote supports.
 - A wallet retains, from the moment it casts a vote until every share
 of that vote is revealed, the material the Vote Reveal Proofs need,
 and that material never leaves the device.
+- A voter can choose, per vote and after being told the cost, to have
+that vote revealed in a single session; the wallet never makes that
+choice for the voter.
 - A wallet can authenticate a configuration document, not merely check
 that it is well formed.
 - A wallet verifies a round's snapshot roots against the Zcash
@@ -379,7 +389,9 @@ to the user.
     drawn height, from a background session where the platform allows,
     each over its own network path. On each later open during the
     window, reconcile and catch up as [Submission Timing] specifies.
-    See [Share Submission] and [Network Isolation].
+    A voter who has chosen express reveal for the vote has all $N_s$
+    messages submitted within this session instead. See
+    [Share Submission] and [Network Isolation].
 
 19. **Optionally confirm inclusion.** A wallet MAY check
     `GET /shielded-vote/v1/share-status/{roundId}/{nullifier}`, subject
@@ -488,12 +500,8 @@ checks below as a substitute for them.
 A wallet MUST validate the structure of the configuration before use:
 
 - `config_version` MUST be a version the wallet recognizes. This
-specification defines version 4. Earlier versions carry Unix-time
-deadlines, relay lists, or signature models this specification does
-not define: a wallet MUST NOT accept a document of version 3 or lower
-for a round created after this specification takes effect, and a
-wallet that accepts one for an earlier round MUST NOT present that
-round to the user as authenticated.
+specification defines version 4 and no other; a wallet MUST NOT accept
+a document of any other version under this specification.
 - `vote_round_id` MUST be exactly 64 lowercase hexadecimal characters.
 - `vote_servers` MUST contain at least one entry.
 - `pir_endpoints` MUST contain at least one entry.
@@ -1063,7 +1071,10 @@ when the vote chain reaches the height drawn for it (see
 [Submission Timing]), over its own network path (see
 [Network Isolation]). This requires the wallet to be running at that
 height, in the foreground or in a background session; a wallet that
-is not catches up as [Submission Timing] specifies.
+is not catches up as [Submission Timing] specifies. A voter MAY
+instead choose express reveal for a vote, under which the wallet
+submits all $N_s$ messages within one session; the conditions on
+offering that choice are in [Submission Timing].
 
 The wallet MUST NOT send any auxiliary input of the Vote Reveal Proof
 — the vote commitment, its VCT position or path, the shares hash, the
@@ -1315,17 +1326,49 @@ Where the remaining window is too short to submit all shares even under
 the compressed schedule, a wallet MUST inform the voter before
 proceeding rather than submitting silently.
 
+**Express reveal.** A wallet MAY offer the voter, for each vote, the
+choice of express reveal as specified in the "Share Submission" and
+"Submission Timing" sections of [^voting-protocol]: all $N_s$ messages
+submitted within the current session, each at a height drawn uniformly
+from a short interval, each over its own network path. A wallet that
+offers it:
+
+- MUST leave it off by default, and MUST NOT remember a previous
+  choice as the default for a later vote;
+- MUST obtain the voter's choice for the specific vote, before
+  submitting the first message of that vote;
+- MUST, before the voter chooses, state that choosing express reveal
+  lets any party holding $t$ of the round's key shares learn this
+  vote's weight and choice, and lets anyone reading the vote chain see
+  that these shares belong to one vote, and MUST state what the
+  alternative requires of the voter (returning across the reveal
+  window, or leaving the wallet able to run in the background);
+- MUST NOT describe express reveal as private, fast-and-private, or in
+  any terms that omit the cost;
+- MUST NOT offer, under the name of express reveal or any other, a
+  mode that reduces the share count, places the ballot count in one
+  share, exposes the decision, or sends any message or witness
+  material to a party other than a vote server for immediate
+  submission;
+- MUST apply [Network Isolation] to every message of an express
+  reveal.
+
+A wallet MAY offer express reveal when the remaining window is short,
+alongside the compressed schedule above, but MUST NOT select it on the
+voter's behalf in that case either.
+
 **Returning to reveal.** A vote is counted only if the wallet is opened
 during the reveal window, obtains the final VCT root, constructs its
-share reveal messages and submits them across the window. A wallet that
-is not opened between `vote_end_height` and `reveal_end_height` cannot
-reveal, and the vote is lost; one that is opened only once, on a
-platform with no background execution, reveals only part of it. A
-wallet SHOULD surface this to the user when the vote is cast, SHOULD
-present both deadlines as estimated times, and SHOULD prompt the user
-to return during the reveal window, early enough that the short-window
-case above is avoidable, since every option available once the window
-is short is worse than having started sooner.
+share reveal messages and submits them, across the window or, under
+express reveal, within that session. A wallet that is not opened
+between `vote_end_height` and `reveal_end_height` cannot reveal, and
+the vote is lost; one that is opened only once, on a platform with no
+background execution and without express reveal, reveals only part of
+it. A wallet SHOULD surface this to the user when the vote is cast,
+SHOULD present both deadlines as estimated times, and SHOULD prompt
+the user to return during the reveal window, early enough that the
+short-window case above is avoidable, since every option available
+once the window is short is worse than having started sooner.
 
 ### Partial Delegation
 
@@ -1375,12 +1418,9 @@ the config schema (e.g., adding a new required top-level field) bumps
 `tally`.
 
 `config_version` also selects the version in the poll signature's
-domain separator (see [Configuration Authentication]). Version 4
-states deadlines as vote chain heights (`vote_end_height`,
-`reveal_end_height`), widens the signed `snapshot_height` to 8 bytes,
-adds `block_time_seconds`, and removes the `relays` list and the
-trustees' `address` field that version 3 carried; its signature is
-verified under `ZcashVotingPollSignature:v4`.
+domain separator (see [Configuration Authentication]). Version 4, the
+version this specification defines, is verified under
+`ZcashVotingPollSignature:v4`.
 
 ## Transaction Lifecycle
 
@@ -1529,14 +1569,10 @@ volumes involved.
 
 # Reference implementation
 
-A reference implementation of the vote chain REST API, together with
-a server-side share submission path that [^voting-protocol] no longer
-specifies, is available at
-[valargroup/vote-sdk](https://github.com/valargroup/vote-sdk). It does
-not yet implement the reveal window, direct share reveal, height-based
-deadlines, the poll signature or the acknowledgement query specified
-here, and its chain validates transactions in consensus, which
-[^voting-protocol] no longer requires.
+No implementation conforming to this specification is available at
+the time of writing. A vote chain with a REST API that is expected to
+be adapted to it is at
+[valargroup/vote-sdk](https://github.com/valargroup/vote-sdk).
 
 # References
 
