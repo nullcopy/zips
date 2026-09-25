@@ -82,6 +82,13 @@ Election authority key ceremony
   produces a round's election authority public key and each trustee's
   key share. See [Election Authority Key Ceremony].
 
+Express reveal
+
+: A voter's per-vote choice to have the vote's $N_s$ share reveal
+  messages submitted within a single session rather than across the
+  reveal window, at the cost stated in [Threat Model]. See
+  [Share Submission].
+
 Final VCT root
 
 : The root of a round's Vote Commitment Tree after the last effective
@@ -360,6 +367,128 @@ over a shielded pool built on the Orchard protocol.
 
 # Privacy Implications
 
+## Threat Model
+
+The privacy claims in this ZIP are stated against the parties below.
+Each is defined by what it can observe or do, not by who it is: any
+organisation, and any coalition of these parties, that acquires a
+capability is that party for the purpose of the claim. Capabilities
+are assumed to be available at any time. The vote chain's record is
+permanent and public, so a party that obtains logs or key material
+after a round has closed — by compromise, by compulsion, or by
+cooperation — is treated as having had them throughout it.
+
+- **Chain observer.** Reads the record. Every party is at least this.
+- **Submission observer.** Sees the network origin and arrival time of
+  submissions: the vote chain node that receives a transaction, the
+  validators and nodes that see it propagate, and any observer on the
+  network path between the client and that node, such as an access
+  provider, a relay of an anonymity network, or a VPN operator. A
+  submission observer may log everything it sees and keep the logs
+  indefinitely; the protocol does not assume it is honest, and does
+  not assume its logs are ever deleted.
+- **Validators.** Decide what is recorded. They learn what a
+  submission observer learns and can act as [Transaction Inclusion]
+  describes.
+- **Key-share coalition.** Any $t$ trustees; any party that obtains $t$
+  key shares, at the time or later; or any party that recovers
+  $\mathsf{ea}\_\mathsf{sk}$ by any other means, including a future
+  cryptanalytic one. Such a party can decrypt every individual share
+  ciphertext in the record.
+- **Poll runner and creator.** Record and sign the round. They have no
+  capability beyond a chain observer's.
+- **Nullifier service.** Learns which nullifier a client asks about,
+  unless its retrieval protocol conceals the query.
+- **Identity linker.** Any party able to tie a network origin to a
+  person: an origin also used with an identifying service, a
+  provider's records, or a compelled disclosure. The protocol treats
+  every network origin as identifying, and relies on no voter's origin
+  being anonymous.
+
+Against these parties, the protocol makes five claims, each with the
+condition under which it holds.
+
+1. **Identity.** No party links a voter's Zcash notes or spending key
+   to any voting transaction. This rests on the alternate nullifier
+   unlinkability of [^balance-proof] and on the client obtaining
+   exclusion proofs without disclosing its nullifiers.
+2. **Weight.** No party learns any voter's ballot count except through
+   the aggregate it contributes to. A key-share coalition learns the
+   values of individual shares, which are fragments it cannot group.
+3. **Decision.** No party without $t$ key shares learns any voter's
+   decision. A key-share coalition learns the option of each fragment
+   it decrypts, without knowing whose it is.
+4. **Grouping.** No party determines which reveals belong to one vote
+   from the record, from anything a submission observer can log, or
+   from both together, provided the client follows [Share Submission]
+   and [Submission Timing] and has not chosen express reveal.
+5. **Systemic.** Claim 2 holds whether or not claim 1 does and whether
+   or not an identity linker exists. A set of per-voter balances,
+   even unattributed, describes the distribution of the shielded
+   pool's holdings, which concerns every holder of the pool and not
+   only those who vote.
+
+The adversary that the submission rules are built against is the
+**key-share coalition with submission logs**. It needs two things:
+$t$ key shares, which exist by construction and outlive the round
+unless every trustee destroys its share (see
+[Election Authority Key Custody]); and the logs of any submission
+observer, which any node on the path may have kept and which can be
+obtained long after the round. Given a grouping of a voter's reveals
+from those logs, decrypting the group yields the voter's exact ballot
+count and decision, and the log's origin ties both to a network
+identity. Nothing about this adversary requires real-time compromise
+or global reach. Every rule about how a client submits exists so that
+no log any party could have kept contains a grouping.
+
+## What Each Party Learns
+
+| Party | Learns | Does not learn |
+|---|---|---|
+| Chain observer | The existence, order and height of every transaction; the proposal identifier of every vote and reveal; the counts of delegations, votes and reveals; the election authority key; the tally. | Any voter's identity, weight or decision; which reveals belong to one vote. |
+| Submission observer | The network origin and arrival height of each submission it sees. | Anything beyond a chain observer about the contents; which submissions belong to one vote, if the client conforms. |
+| Validators | As a submission observer. | As a submission observer. |
+| Key-share coalition | The value and option of every individual share in the record. | Which shares belong to one vote; any voter's total; any voter's identity. |
+| Key-share coalition with submission logs | For a conforming client, as a key-share coalition. For a client that let a log group its reveals, that vote's ballot count, decision and network origin. | Which reveals are one vote, where no log groups them. |
+| Poll runner and creator | As a chain observer. | As a chain observer. |
+| Nullifier service | Which nullifier a client holds, and so that it is a participant and which note it holds, unless the retrieval protocol conceals the query. | Anything about the vote itself. |
+
+## Accepted Residual Leaks
+
+- **Proposal identifiers.** Every vote and every reveal names its
+  proposal. The anonymity set of a reveal is the reveals for that
+  proposal. A deployment that wants a round's proposals to be
+  indistinguishable runs one proposal per round.
+- **Counts and timing of participation.** The number of delegations,
+  the number of votes per proposal, and the heights at which they were
+  recorded are public. The number of votes on a proposal is the number
+  of its reveals divided by $N_s$.
+- **Which proposals a VAN voted on.** A submission observer that sees a
+  delegation and the votes consuming its VAN from one origin in one
+  session can associate them, and learns which proposals that voter
+  voted on, but not with what weight or decision. Isolating those
+  submissions too is required of wallets by
+  `draft-valargroup-shielded-voting-wallet-api` [^wallet-api].
+- **A sole voter on an option.** Where one voter is the only one to
+  choose an option, the aggregate for that option is that voter's
+  ballot count. See [Open issues].
+- **Express reveal.** A voter who chooses express reveal (see
+  [Share Submission]) makes that vote's $N_s$ reveals groupable by any
+  chain observer, from the record alone, and a key-share coalition can
+  then recover that vote's ballot count and decision. The voter is
+  told this before choosing.
+- **Permanence.** Whatever a key-share coalition can learn, it can
+  learn at any later time. The horizon of every weight and decision
+  claim is the horizon over which $\mathsf{ea}\_\mathsf{sk}$ stays
+  unrecoverable: the trustees' retention of their shares, and the
+  security of El Gamal on Pallas against future cryptanalysis (see
+  [Why Classical El Gamal Rather Than Post-Quantum Encryption]).
+- **Non-conforming clients.** The grouping claim depends on the client
+  following the submission rules. Nothing in the protocol detects a
+  client that does not.
+
+## Privacy Properties
+
 **Unlinkability to on-chain identity.** The delegation phase moves
 voting authority from the holder's spending key to an unlinkable
 governance hotkey. All subsequent voting transactions use this hotkey.
@@ -482,6 +611,9 @@ nullifier service step of [Snapshot Configuration]).
   total is recoverable; see [Privacy Implications].
 - A voter's decision is not revealed to any party holding fewer than
   $t$ key shares.
+- A voter MAY choose, per vote and after being told what it costs, to
+  have that vote's shares revealed in a single session. A client MUST
+  NOT make that choice for the voter.
 - The aggregate tally is publicly verifiable: any party can recompute
   the aggregation and check the decryption from the vote chain's
   record.
@@ -1768,6 +1900,33 @@ party (see [Why There Are No Relays]). A client that is not running at
 a drawn height submits under the catch-up rules in
 [Submission Timing].
 
+**Express reveal.** A voter MAY choose, for a vote, to have its $N_s$
+messages submitted within a single session rather than across the
+reveal window. Under express reveal the client constructs the same
+$N_s$ messages, submits each over its own network path under rule 1,
+and submits them at the heights drawn for express reveal in
+[Submission Timing]. Everything else is unchanged: the share count,
+the decomposition, the encryption of the decision, and the client's
+sole possession of the messages. What express reveal gives up is the
+memoryless schedule: a chain observer sees $N_s$ reveals for one
+proposal recorded in close succession and can group them as one vote
+from the record alone, and a key-share coalition can then decrypt
+them and recover that vote's ballot count and decision (see
+[Threat Model]).
+
+Express reveal MUST be off by default and MUST be chosen by the voter
+for each vote, after the client has told the voter, in terms the voter
+can act on, that choosing it lets any party holding $t$ key shares
+learn this vote's weight and choice, and lets any observer of the
+record see that these shares are one vote. A client MUST NOT present
+express reveal as a means of reducing the share count, of exposing the
+decision, or of handing construction or submission to another party:
+each of those costs more than express reveal and saves nothing beyond
+it, since express reveal already removes every step that requires the
+client to return more than once. Rule 1 still applies under express
+reveal; without it, the vote's origin is also exposed to the node that
+receives the burst. See [Why Express Reveal Exists].
+
 **Retry.** A client SHOULD confirm that each of its messages has been
 recorded on the vote chain. A client that observes that a message has
 not been recorded within a client-configured number of blocks MAY
@@ -1848,6 +2007,16 @@ current height, and the wallet SHOULD tell the voter that the vote is
 not yet fully revealed and when to return. On-open reconciliation is
 the primary catch-up mechanism and MUST NOT rely on notification
 delivery.
+
+**Express reveal.** A client submitting under express reveal (see
+[Share Submission]) does not draw the schedule above. It chooses an
+interval of $E$ blocks, no longer than the session it expects to
+remain running and ending no later than $H_{\mathsf{end}} - \Delta$,
+draws each share's submission height independently and uniformly from
+$[\mathsf{now}, \mathsf{now} + E]$, shuffles the shares as in rule 1,
+and submits each at its height under rule 5. The background and
+catch-up rules do not apply, since the client completes the reveal in
+the session in which it started it.
 
 **When the window is short.** If the schedule, or a rescheduling under
 the catch-up rules, would place any share after
@@ -3112,26 +3281,26 @@ consensus is only ordering and availability.
 
 ## Why the Vote Chain Validates Nothing
 
-Earlier revisions had the vote chain enforce this ZIP: verify each
-proof at admission, reject a transaction reusing a nullifier, maintain
-the VCT and running ciphertext sums, check the ceremony's proofs,
-derive the election authority key, drive the round's state machine and
-combine the partial decryptions into a tally. A verifier was still
-expected to redo all of it, so validators were not trusted for the
-result, but they were responsible for the rules, and that had three
-costs.
+A vote chain could enforce this ZIP in consensus: verify each proof at
+admission, reject a transaction reusing a nullifier, maintain the VCT
+and running ciphertext sums, check the ceremony's proofs, derive the
+election authority key, drive the round's state machine and combine
+the partial decryptions into a tally. A verifier would still have to
+redo all of it, so validators would not be trusted for the result, but
+they would be responsible for the rules, and that has three costs.
 
 First, a verifier could not distinguish a transaction the chain
-rejected as invalid from one it declined to record: both were absent,
-and "invalid" was available as an account of any exclusion. Second,
-every rule was implemented twice, once in consensus and once in every
-verifier, and the two could disagree, with consensus winning by
-default. Third, the chain's own state — the accumulators, the recorded
-final root, the derived key, the tally — was a second source of truth
-that a wallet or an auditor could take instead of the record, and
-doing so was the path of least resistance.
+rejected as invalid from one it declined to record: both would be
+absent, and "invalid" would be available as an account of any
+exclusion. Second, every rule would be implemented twice, once in
+consensus and once in every verifier, and the two could disagree, with
+consensus winning by default. Third, the chain's own state — the
+accumulators, the recorded final root, the derived key, the tally —
+would be a second source of truth that a wallet or an auditor could
+take instead of the record, and doing so would be the path of least
+resistance.
 
-Recording without validating removes all three. The record is the only
+Recording without validating avoids all three. The record is the only
 artefact, every rule is a function of it, and every party that applies
 the rules obtains the same derived state. Validators retain exactly
 one capability, exclusion, and [Transaction Inclusion] describes it.
@@ -3291,12 +3460,12 @@ so that recovering the total requires grouping them.
 Both purposes depend on the shares being ungroupable, and the protocol
 is designed so that nothing it publishes groups them. Each reveal
 carries a nullifier, ciphertexts and constants that are the same for
-every reveal in the round; see [Privacy Implications]. Earlier drafts
-undermined this by having a submission server construct the Vote
-Reveal Proof, which required the server to be told which vote
-commitment each share belonged to, so that a server holding two shares
-of a vote could group them from the payload alone. That path is
-removed; see [Why the Client Constructs Reveal Proofs].
+every reveal in the round; see [Privacy Implications]. Any design in
+which a party other than the client constructs the Vote Reveal Proof
+undermines this, because a prover must be told which vote commitment
+each share belongs to, and a server holding two shares of a vote could
+then group them from the payload alone; see
+[Why the Client Constructs Reveal Proofs].
 
 With content linkage removed, the remaining channel is metadata:
 submission height and network origin. Those are addressed by the
@@ -3310,9 +3479,10 @@ to within $N_s$ ballots, so the EA's view of one share is equivalent
 to its view of the whole ballot count. The requirement in [Vote Share]
 exists to prevent this (see [Why Randomized Share Decomposition]).
 
-Earlier drafts specified a fallback in which a voter casting near the
-end of the voting window placed their full ballot count into a single
-share. That mode is removed; see [Why There Is No Single-Share Mode].
+No mode places a voter's full ballot count into a single share, even
+for a voter short of time; see [Why There Is No Single-Share Mode].
+A voter who accepts a weaker schedule chooses express reveal instead,
+which keeps the decomposition; see [Why Express Reveal Exists].
 
 ## Why Randomized Share Decomposition
 
@@ -3389,23 +3559,23 @@ for no security benefit.
 
 ## Why the Client Constructs Reveal Proofs
 
-Earlier revisions of this ZIP had a submission server construct the
-Vote Reveal Proof on the voter's behalf, on two grounds: that mobile
+An alternative design has a submission server construct the Vote
+Reveal Proof on the voter's behalf, on two grounds: that mobile
 devices are unreliable for background ZKP computation, and that
 server-side construction enables temporal mixing of shares from many
-voters. Neither ground survives examination, and the design had a cost
-that no encoding of the payload could remove.
+voters. Neither ground survives examination, and the design has a cost
+that no encoding of the payload can remove.
 
 A prover must be told which leaf of the VCT it is proving membership
-of. Every field a server needed — the vote commitment, its VCT
+of. Every field a server would need — the vote commitment, its VCT
 position, the shares hash, the array of share commitments — takes the
 same value in all $N_s$ payloads of one vote, so a server receiving two
 of a voter's payloads could group them with certainty, from the
 contents alone, before any timing or network measure applied. The
-correlation was inherent in delegating proof construction: any leaf
+correlation is inherent in delegating proof construction: any leaf
 identifier links the $N_s$ shares, because they all descend from one
 vote transaction. Splitting the vote into $N_s$ separately inserted
-leaves would not have helped, since the leaves would be inserted
+leaves would not help, since the leaves would be inserted
 consecutively by that transaction, and inserting them separately
 would require a linking proof per share that only the client could
 construct.
@@ -3417,20 +3587,20 @@ Reveal Proof is smaller than that, and a client constructs it once per
 share. The class of clients that can vote but cannot construct a Vote
 Reveal Proof is empty.
 
-Content linkage had to be removed before timing and network measures
-had anything to protect: a server told which shares belong together
+Content linkage has to be absent before timing and network measures
+have anything to protect: a server told which shares belong together
 does not need to infer it. With the client holding everything and the
 payload reduced to the message itself, those measures are effective,
 and [Share Submission] requires them.
 
 ## Why There Are No Relays
 
-After proof construction moved to the client, an intermediate revision
-kept a store-and-forward relay: a client that would not be online
-across its submission schedule could hand each finished message to a
-relay with the time at which to submit it. The relay received nothing
-a chain observer would not, and rules limited it to one message per
-vote. It is removed for two reasons.
+A store-and-forward relay is a natural addition once the client
+constructs its own proofs: a client that will not be online across its
+submission schedule hands each finished message to a relay with the
+height at which to submit it. Such a relay receives nothing a chain
+observer would not, and a rule can limit it to one message per vote.
+This protocol has no relay, for two reasons.
 
 The first is that delayed submission is the client's duty. The
 schedule in [Submission Timing] protects the voter only if the client
@@ -3443,23 +3613,24 @@ submit, in background sessions where the platform allows and on the
 next application open where it does not, one overdue transaction at a
 time. This ZIP adopts those rules.
 
-The second is that the one-message-per-relay rule that was meant to
-contain a relay's view was itself a leak. It made the assignment of a
-vote's messages to relays a random injection rather than independent
-draws, so any two messages at one relay were known to belong to
-different votes, and a coalition observing several relays could use
-that to prune the pairings it had to consider. A rule that exists to
-protect against a relay that has received two shares of one vote,
-which the network isolation rules already forbid the client to allow,
-was paying for that protection with information given to every relay.
+The second is that the one-message-per-relay rule meant to contain a
+relay's view is itself a leak. It makes the assignment of a vote's
+messages to relays a random injection rather than independent draws,
+so any two messages at one relay are known to belong to different
+votes, and a coalition observing several relays can use that to prune
+the pairings it has to consider. A rule that exists to protect against
+a relay that has received two shares of one vote, which the network
+isolation rules already forbid the client to allow, pays for that
+protection with information given to every relay.
 
-With relays gone, the only party that ever holds a share reveal
-message before it is recorded is the client that built it, and the
-only metadata any party sees is what the vote chain node receiving a
-single submission sees. Availability is the client's problem, as it is
-for every other transaction a wallet sends, and the reveal window is
-sized so that ordinary wallet use covers it (see
-[Why a Separate Reveal Window]).
+Without relays, the only party that ever holds a share reveal message
+before it is recorded is the client that built it, and the only
+metadata any party sees is what the vote chain node receiving a single
+submission sees. Availability is the client's problem, as it is for
+every other transaction a wallet sends; the reveal window is sized so
+that ordinary wallet use covers it (see [Why a Separate Reveal Window]),
+and a voter who would rather not return across it can choose express
+reveal (see [Why Express Reveal Exists]).
 
 ## Why There Is No Single-Share Mode
 
@@ -3469,43 +3640,44 @@ recovers the exact figure — not an estimate bounded by a decomposition
 strategy, as in [Why Randomized Share Decomposition], but the value
 itself.
 
-The justification for accepting this was that a submission server might
-not complete $N_s$ Vote Reveal Proofs before the voting window closed,
-so a voter casting late would otherwise lose their vote. That
-constraint no longer exists: the client constructs its own proofs,
-does so during a reveal window that opens only after voting has
-closed, and can construct all $N_s$ of them in seconds at any point in
-that window. A voter who is late constructs and submits under the
-compressed schedule in [Submission Timing], which preserves both
-inclusion and amount privacy.
+The case for such a mode is a voter short of time: if constructing
+$N_s$ proofs could not be completed before a deadline, a single share
+would be the only way not to lose the vote. That case does not arise
+here. The client constructs its own proofs, does so during a reveal
+window that opens only after voting has closed, and can construct all
+$N_s$ of them in seconds at any point in that window. A voter who is
+late constructs and submits under the compressed schedule in
+[Submission Timing], or chooses express reveal, both of which keep the
+decomposition and so keep a single decryption from recovering the
+total.
 
-Implementations should note that this mode's exposure was
-disproportionately borne by voters who waited — including those waiting
-deliberately to avoid influencing others — and that its on-chain
-indistinguishability, which earlier drafts cited, protected against a
-chain observer while the submission server of the time could identify
-such a vote directly from the payload.
+Such a mode would also be borne disproportionately by voters who
+waited, including those waiting deliberately to avoid influencing
+others, and its exposure would be invisible to a chain observer, which
+makes it easy to underestimate: a single-share vote looks like any
+other in the record and differs only in what a key-share coalition
+recovers from it.
 
 ## Why Decisions Are Encrypted at Reveal
 
-Earlier revisions of this ZIP made $\mathsf{vote}\_\mathsf{decision}$ a
-public input to the Vote Reveal Proof, so that the chain could route
-each revealed ciphertext to the accumulator for that option. Every
-submission server and every chain observer learned the decision
-attached to each revealed share, running per-option totals were public
-while a round was open, and validators could exclude reveals by the
-option they supported without decrypting anything. Those revisions
-declined to encrypt decisions on cost grounds: a per-option ciphertext
-vector, computed in the Vote Proof, would multiply that circuit's
-sixteen encryptions by the number of options.
+The simplest design makes $\mathsf{vote}\_\mathsf{decision}$ a
+public input to the Vote Reveal Proof, so that a verifier can route
+each revealed ciphertext to the aggregate for that option. Under it,
+every submission observer and every chain observer learns the decision
+attached to each revealed share, per-option totals are public while a
+round is open, and validators can exclude reveals by the option they
+support without decrypting anything. The argument for accepting that
+is cost: a per-option ciphertext vector, computed in the Vote Proof,
+would multiply that circuit's sixteen encryptions by the number of
+options.
 
 The cost is avoidable by producing the vector at reveal rather than at
-vote. The Vote Commitment continues to bind one ciphertext per share
-and the decision as a private witness. The Vote Reveal Proof then
-publishes $N_{\mathsf{opt}}$ ciphertexts, places the committed
-ciphertext at the decision's position, fills every other position with
-a fresh encryption of zero, and proves both facts. The Vote Proof is
-unchanged. The reveal circuit gains $N_{\mathsf{opt}}$ fixed-base and
+vote. The Vote Commitment binds one ciphertext per share and the
+decision as a private witness. The Vote Reveal Proof then publishes
+$N_{\mathsf{opt}}$ ciphertexts, places the committed ciphertext at the
+decision's position, fills every other position with a fresh
+encryption of zero, and proves both facts. The Vote Proof is
+unaffected. The reveal circuit gains $N_{\mathsf{opt}}$ fixed-base and
 $N_{\mathsf{opt}}$ variable-base scalar multiplications, once per
 share, which is well under the cost of the Vote Proof the client has
 already constructed.
@@ -3566,12 +3738,12 @@ total, the order in which they are emitted must not depend on their
 magnitudes, and the times at which they are emitted must be memoryless
 so that a burst does not identify a single client's set.
 
-ZIP 318 specifies all three. Earlier revisions of this protocol
-specified only that shares be submitted at "randomized delays", without
-a distribution, a spread, or an ordering requirement, and specified an
-even decomposition that made the first part vacuous. That is the weaker
-form of the same design, arrived at independently, and the difference
-was not visible while the two documents were read separately.
+ZIP 318 specifies all three. A weaker form of the same design is easy
+to arrive at independently — shares submitted at "randomized delays"
+without a distribution, a spread or an ordering requirement, over an
+even decomposition that makes the first part vacuous — and provides
+little of the protection while appearing to provide all of it.
+Adopting ZIP 318's discipline in full, by reference, avoids that.
 
 Adopting ZIP 318's discipline also has a review benefit: the analysis
 supporting it — in particular why memoryless inter-arrival delays are
@@ -3582,8 +3754,8 @@ ZIP 318's rules for a wallet that is not running when a transaction
 falls due — best-effort background sessions that broadcast without
 synchronising, reconciliation on every application open, and at most
 one overdue transaction per open — are adopted as well, because a
-wallet that cannot be relied on to be online is the case that
-motivated relays, and these rules are how ZIP 318 handles it without
+wallet that cannot be relied on to be online is the case a relay would
+otherwise serve, and these rules are how ZIP 318 handles it without
 any third party (see [Why There Are No Relays]).
 
 Two differences from ZIP 318 are deliberate. First, delays here are
@@ -3595,6 +3767,46 @@ $\mathsf{MEAN}\_\mathsf{DELAY}$ is derived from the remaining window
 rather than fixed, because a reveal window's duration is a per-round
 configuration value while a migration's duration is chosen by the
 wallet.
+
+## Why Express Reveal Exists
+
+The full submission schedule costs the voter something: either a
+platform that runs the wallet in the background at drawn heights, or
+returning to the wallet across the reveal window, one overdue message
+per return. Some voters will not pay it, and a voter who cannot be
+made to pay it will otherwise either not vote or use a client that
+quietly does less. Express reveal gives that voter a defined choice
+with a defined cost, stated to them, instead of an undefined one.
+
+The cost is confined to what the schedule alone protects. Express
+reveal changes nothing about the messages: the same $N_s$ shares, the
+same decomposition, the same encrypted decision, the same client-only
+possession, the same per-message network path. In the record, an
+express vote's reveals are indistinguishable from any other vote's
+except by the heights at which they were recorded. A key-share
+coalition that decrypts every share in the record therefore cannot
+tell express votes from others by their contents, and a chain
+observer that groups an express vote's reveals by their timing learns
+nothing about its weight or decision without $t$ key shares. What the
+voter gives up is the grouping claim, for that vote, against a
+key-share coalition; nothing else, and nobody else's.
+
+The alternatives a voter might be offered instead cost more for the
+same saving. Reducing the share count or placing the weight in one
+share lets a single decryption recover the total and marks the vote
+by its values. Exposing the decision lets every chain observer read
+it. Handing construction or submission to another party gives that
+party the grouping and the origin outright, and does not remove the
+one return to the wallet during the reveal window, which the final
+root requires of every design in which reveals are anchored to it.
+Express reveal already removes every other return, so none of those
+shortcuts buys the voter anything further.
+
+Express reveal is off by default and chosen per vote because the
+decision is the voter's, and because a client default would make it
+the deployment's. Publishing the proportion of express votes keeps
+the size of the exposure a stated figure rather than an inferred one.
+
 
 ## Why Reusing VAN Address and Randomness
 
@@ -3635,13 +3847,13 @@ that compromise of any set of trustees smaller than $t$ does not expose
 $\mathsf{ea}\_\mathsf{sk}$ and therefore cannot open an individual
 share ciphertext, and so that no party ever holds the key at all.
 
-Earlier revisions used a trusted dealer: one party sampled the key,
-split it with Shamir's scheme, distributed the shares and was trusted
-to erase its copy. Erasure is not verifiable by any other party, so
-every amount-privacy claim rested on one party's conduct during a
-window nobody else could observe, and a deployment could at best name
-the party. Distributed key generation removes the window rather than
-naming the party who had it.
+The alternative is a trusted dealer: one party samples the key, splits
+it with Shamir's scheme, distributes the shares and is trusted to erase
+its copy. Erasure is not verifiable by any other party, so every
+amount-privacy claim would rest on one party's conduct during a window
+nobody else could observe, and a deployment could at best name the
+party. Distributed key generation removes the window rather than
+naming the party who has it.
 
 The construction is Pedersen's, with each participant proving
 knowledge of its constant term before any other participant's
@@ -3657,8 +3869,8 @@ protocol assumes.
 
 The output is a set of Shamir shares of a key that exists only as a
 sum, and every downstream step — trustee share keys, partial
-decryptions, DLEQ proofs and Lagrange combination — is unchanged from
-the dealer-based design.
+decryptions, DLEQ proofs and Lagrange combination — is the same as it
+would be under a dealer.
 
 ## Why a Send-Based VAN Model
 
@@ -3779,12 +3991,12 @@ acknowledgement.
 ## Why a Separate Reveal Window
 
 Every Vote Reveal Proof anchors to a VCT root, and the anchor is
-public. Earlier revisions accepted any published root and let voting
-and reveal overlap, so a voter constructing $N_s$ proofs against the
-root current at the time would tag all $N_s$ reveals with a value few
-other voters shared, and a chain observer could group them by it
-without decrypting anything. That is the linkage this ZIP's privacy
-claims cannot survive.
+public. If reveals could anchor to any root, and voting and reveal
+overlapped, a voter constructing $N_s$ proofs against the root current
+at the time would tag all $N_s$ reveals with a value few other voters
+shared, and a chain observer could group them by it without decrypting
+anything. That is the linkage this ZIP's privacy claims cannot
+survive.
 
 Two remedies were considered. Periodic checkpoint roots, with reveals
 required to anchor to a checkpoint, bound the tag's resolution to the
@@ -3861,6 +4073,7 @@ height is an estimate.
 | $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
 | The trustee share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
 | The validator stake distribution | Sizes the coalition able to exclude transactions; see [Transaction Inclusion]. |
+| The proportion of a round's votes revealed by express reveal | Bounds the votes whose weight a key-share coalition can recover from the record; the bursts express reveal produces are visible in the record, so this is an estimate any party can check. See [Share Submission]. |
 
 The RECOMMENDED value of $\mathsf{min}\_\mathsf{confirmations}$ is 100
 blocks.
@@ -3881,12 +4094,12 @@ circuits determine what the proofs mean.
 
 # Reference implementation
 
+No implementation conforming to this ZIP is available at the time of
+writing. The following components are expected to be adapted to it:
+
 - [^ref-circuits] — Halo 2 circuits for the Delegation Proof, Vote
   Proof, and Vote Reveal Proof.
-- [^ref-vote-sdk] — Cosmos SDK vote chain. It validates transactions,
-  maintains round state and tallies in consensus, and includes a
-  submission server, none of which this ZIP specifies; see
-  [Why the Vote Chain Validates Nothing] and [Why There Are No Relays].
+- [^ref-vote-sdk] — Cosmos SDK vote chain.
 - [^ref-nullifier-pir] — PIR server and client for privately retrieving
   nullifier non-membership proofs.
 - [^ref-librustvoting] — Client-side Rust library for proof generation,
