@@ -510,6 +510,27 @@ Tiers 1 and 2 and appending that 1 deterministic sibling, the client
 MUST reconstruct the depth-26 Merkle root and verify it against the
 published depth-26 root of the exclusion tree.
 
+### Membership Queries and Other Nullifier Sets
+
+Nothing in the tree or in either retrieval scheme depends on the
+elements being Ironwood pool nullifiers: any set of Pallas base field
+elements can be served, and the same query answers a membership
+question as well as a non-membership one. A client that retrieves the
+leaf whose range covers its value obtains an exclusion proof when the
+value lies strictly inside the range, and learns that the value is a
+member of the set when the value is the excluded point of a punctured
+range. In either case the server learns nothing about which value was
+queried.
+
+A consuming protocol that uses this for a set that grows over time,
+such as the share nullifiers recorded for a voting round on its vote
+chain [^draft-voting-protocol], treats each export of the tree as a
+Protocol Epoch: the server labels each `Server_Setup` instantiation
+with the height of the underlying chain up to which the set was read,
+re-exports at a cadence the deployment publishes, and answers each
+query against one labelled instantiation only. A client interprets a
+non-membership answer as "not a member as of that height".
+
 ## Retrieval Schemes
 
 This ZIP defines two retrieval schemes, identified by integer version
