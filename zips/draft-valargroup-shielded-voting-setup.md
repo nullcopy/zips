@@ -1044,7 +1044,7 @@ the two lists are to be read as one.
 
 
 
-[^cosmos-staking]: [Cosmos SDK `x/staking` module documentation](https://docs.cosmos.network/main/build/modules/staking)
+[^cosmos-staking]: [Cosmos SDK `x/staking` module documentation](https://github.com/cosmos/cosmos-sdk/blob/main/x/staking/README.md)
 
 [^ref-vote-sdk]: [valargroup/vote-sdk: Cosmos SDK vote chain for shielded voting](https://github.com/valargroup/vote-sdk)
 
