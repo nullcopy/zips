@@ -22,8 +22,7 @@ only when, they appear in all capitals.
 The character § is used when referring to sections of the Zcash Protocol
 Specification. [^protocol]
 
-The terms below are to be interpreted as follows. These definitions are
-descriptive; the rules that govern each term are in [Specification].
+The terms below are to be interpreted as follows:
 
 Ballot
 
@@ -32,15 +31,9 @@ Ballot
 
 Cancellation
 
-: A transaction by which a trustee of a pending voting round, or the
-  round's creator, withdraws the round before it opens. See
+: A transaction by which a trustee of a pending voting round, or its
+  poll creator, withdraws the round before it opens. See
   [Cancellation].
-
-Creator
-
-: The account that records a round creation transaction. The creator
-  is ordinarily the poll runner, but the vote chain does not
-  distinguish it. See [Poll Creation].
 
 Decision
 
@@ -80,7 +73,7 @@ Election authority key ceremony
 
 : The distributed key generation protocol, run over the vote chain, that
   produces a round's election authority public key and each trustee's
-  key share. See [Election Authority Key Ceremony].
+  secret share. See [Election Authority Key Ceremony].
 
 Express reveal
 
@@ -129,19 +122,20 @@ Partial decryption
   accompanied by a proof that it was computed with the trustee's share.
   See [Partial Decryption].
 
-Poll runner
+Poll creator
 
-: The party that runs a voting round: it chooses the snapshot, names
-  the round's trustees, creates the round on the vote chain carrying
-  the snapshot's roots, and signs the configuration wallets use to find
-  it. Every participant verifies the roots independently; see
-  [Snapshot Configuration], [Reading the Snapshot Roots],
+: The party that creates a voting round: it chooses the snapshot,
+  names the round's trustees, records the round creation transaction
+  carrying the snapshot's roots, and signs, with the same key, the
+  configuration wallets use to find the round. The poll creator is not
+  trusted for anything beyond its selection of the trustees, on whom
+  the trust assumptions of [Threat Model] rest. See
   [Poll Creation] and [Poll Signature].
 
 Poll signature
 
-: The poll runner's signature over a round's defining fields, by which
-  wallets recognise the round as the one the poll runner is running.
+: The poll creator's signature over a round's defining fields, by which
+  wallets recognise the round as the one the poll creator published.
   See [Poll Signature].
 
 Proposal
@@ -153,7 +147,7 @@ Proposal
 
 Ratification
 
-: A trustee's published statement, made by acknowledging its key share,
+: A trustee's published statement, made by acknowledging its secret share,
   that it has verified the round's snapshot roots, holds a verified
   share for the round, and will take part in its tally. See
   [Ratification].
@@ -169,13 +163,15 @@ Reveal window
 Share commitment
 
 : A blinded Poseidon commitment to one encrypted share's ciphertext.
-  The $N_s$ share commitments of a vote are hashed into the shares hash.
-  See [Vote Share].
+  The $N_s$ share commitments of a vote are hashed into the shares hash,
+  and the Vote Proof binds the committed shares to sum to the ballot
+  count of the VAN the vote consumes. See [Vote Share].
 
 Share nullifier
 
-: A nullifier derived from a vote commitment and share index, published
-  when a share is revealed, preventing double-counting.
+: A nullifier derived from a vote commitment and share index, proven in
+  zero knowledge by the Vote Reveal Proof and published when a share is
+  revealed, preventing double-counting.
 
 Shares hash
 
@@ -188,15 +184,12 @@ Snapshot
   eligible balances of the Ironwood pool are captured for a round. See
   [Snapshot Configuration].
 
-Snapshot height
-
-: The Zcash mainnet block height of the snapshot. See
-  [Snapshot Configuration] for constraints.
-
 Submission schedule
 
 : The set of vote chain heights at which a client submits its $N_s$
-  share reveal messages, drawn as specified in [Submission Timing].
+  share reveal messages. Each client draws its own schedule at random,
+  independently of every other client, as specified in
+  [Submission Timing].
 
 Trustee
 
@@ -204,7 +197,7 @@ Trustee
   that jointly generate its election authority key and each hold a
   share of the private key. Trustees ratify the round and decrypt its
   tally. A trustee holds a trustee account key and a trustee ceremony
-  key, and after the ceremony a trustee key share. See
+  key, and after the ceremony a trustee secret share. See
   [Election Authority Key Ceremony] and [Ratification].
 
 Trustee account key
@@ -219,24 +212,24 @@ Trustee ceremony key
   transaction, under which the encrypted shares dealt to the trustee
   during the key ceremony are addressed.
 
-Trustee key share
+Trustee public share
+
+: $\mathsf{pk}_i = [\mathsf{sk}_i]\, G$, the public value corresponding
+  to trustee $i$'s secret share, derivable by anyone from the
+  ceremony's recorded commitments and used to verify the trustee's
+  partial decryptions. See [Election Authority Key Ceremony].
+
+Trustee secret share
 
 : $\mathsf{sk}_i$, trustee $i$'s share of the election authority
   private key, produced by the key ceremony and used to compute the
   trustee's partial decryptions.
 
-Trustee share key
-
-: $\mathsf{pk}_i = [\mathsf{sk}_i]\, G$, the public key corresponding
-  to trustee $i$'s key share, derivable by anyone from the ceremony's
-  published commitments and used to verify the trustee's partial
-  decryptions. See [Election Authority Key Ceremony].
-
 Validator
 
 : An operator of the vote chain's consensus. Validators determine which
-  transactions are recorded (see [Transaction Inclusion]) and apply
-  none of the rules in this ZIP.
+  transactions are recorded (see [Transaction Inclusion]), but
+  otherwise have no involvement in the operation of any voting round.
 
 VAN nullifier
 
@@ -297,8 +290,9 @@ Voting window
 # Abstract
 
 This ZIP specifies a shielded voting protocol that allows holders of
-notes in the Ironwood pool to cast stake-weighted votes on proposals without revealing
-their identity, individual balances, or vote allocations.
+notes in the Ironwood pool to cast stake-weighted votes on proposals
+without revealing their identity, individual balances, or vote
+allocations.
 
 The protocol proceeds in three proving phases. First, a *delegation
 proof* (building on the Orchard Proof-of-Balance [^balance-proof])
@@ -313,6 +307,8 @@ option it supports.
 
 After the reveal window closes, anyone can aggregate the revealed
 El Gamal ciphertexts per proposal option from the vote chain's record.
+A share that was never revealed contributes nothing, and the tally
+does not wait for any voter.
 The round's trustees — a set disjoint from the validators, among whom
 the key was generated without ever existing whole — publish partial
 decryptions; anyone combines them via Lagrange interpolation and
@@ -330,7 +326,9 @@ runner signs it, the key ceremony that produces its election authority
 key, and the trustee ratification that opens voting. These are rules
 any verifier applies to the vote chain's record, not consensus rules of
 either chain. The transactions that carry each step, and their
-encoding, are specified in [Transaction Formats].
+encoding, are specified in [Transaction Formats]. The three proofs are
+new Halo 2 circuits built from Orchard's gadgets; the Orchard Action
+circuit is not modified.
 
 
 # Motivation
@@ -395,10 +393,13 @@ cooperation — is treated as having had them throughout it.
   $\mathsf{ea}\_\mathsf{sk}$ by any other means, including a future
   cryptanalytic one. Such a party can decrypt every individual share
   ciphertext in the record.
-- **Poll runner and creator.** Record and sign the round. They have no
-  capability beyond a chain observer's.
+- **Poll creator.** Records and signs the round. It has no capability
+  beyond a chain observer's; what it chooses is the trustee set.
 - **Nullifier service.** Learns which nullifier a client asks about,
-  unless its retrieval protocol conceals the query.
+  whether an Ironwood pool nullifier at delegation or a share nullifier
+  at confirmation, unless its retrieval protocol conceals the query, as
+  the private information retrieval of `draft-valargroup-nullifier-pir`
+  [^nullifier-pir] does.
 - **Identity linker.** Any party able to tie a network origin to a
   person: an origin also used with an identifying service, a
   provider's records, or a compelled disclosure. The protocol treats
@@ -439,7 +440,10 @@ from those logs, decrypting the group yields the voter's exact ballot
 count and decision, and the log's origin ties both to a network
 identity. Nothing about this adversary requires real-time compromise
 or global reach. Every rule about how a client submits exists so that
-no log any party could have kept contains a grouping.
+no log any party could have kept contains a grouping. The same rules
+are what defeat the identity linker: a network origin can be tied to
+a person, but with no grouping there is no weight or decision to tie
+it to, so the linker's capability has nothing to act on.
 
 ## What Each Party Learns
 
@@ -450,8 +454,8 @@ no log any party could have kept contains a grouping.
 | Validators | As a submission observer. | As a submission observer. |
 | Key-share coalition | The value and option of every individual share in the record. | Which shares belong to one vote; any voter's total; any voter's identity. |
 | Key-share coalition with submission logs | For a conforming client, as a key-share coalition. For a client that let a log group its reveals, that vote's ballot count, decision and network origin. | Which reveals are one vote, where no log groups them. |
-| Poll runner and creator | As a chain observer. | As a chain observer. |
-| Nullifier service | Which nullifier a client holds, and so that it is a participant and which note it holds, unless the retrieval protocol conceals the query. | Anything about the vote itself. |
+| Poll creator | As a chain observer. | As a chain observer. |
+| Nullifier service | Which nullifier a client asks about, unless the retrieval protocol conceals the query: at delegation, which note the client holds; at confirmation, which share nullifiers are its own. | Anything else about the vote. |
 
 ## Accepted Residual Leaks
 
@@ -611,9 +615,9 @@ nullifier service step of [Snapshot Configuration]).
   total is recoverable; see [Privacy Implications].
 - A voter's decision is not revealed to any party holding fewer than
   $t$ key shares.
-- A voter MAY choose, per vote and after being told what it costs, to
-  have that vote's shares revealed in a single session. A client MUST
-  NOT make that choice for the voter.
+- A voter MAY choose, per vote and after being informed of the privacy
+  implications, to have that vote's shares revealed in a single
+  session. A client MUST NOT make that choice for the voter.
 - The aggregate tally is publicly verifiable: any party can recompute
   the aggregation and check the decryption from the vote chain's
   record.
@@ -633,9 +637,11 @@ nullifier service step of [Snapshot Configuration]).
 # Non-requirements
 
 - The vote chain's consensus engine, block structure, transaction
-  envelope and node API. The transactions this ZIP defines, their
-  encoding, and the rules by which any party interprets them are in
-  scope; see [Transaction Formats] and [Vote Chain Record].
+  envelope and node API. What this ZIP requires of the vote chain is
+  stated in [Vote Chain Record], and any chain that provides it
+  serves; the transactions this ZIP defines, their encoding, and the
+  rules by which any party interprets them are in scope, see
+  [Transaction Formats].
 - How operators are organised to run a deployment: roles, validator
   onboarding, nullifier service operation, deployment architecture, and
   audit procedures. These are specified in
@@ -883,7 +889,7 @@ where:
   — the low and high 128-bit halves of $\mathsf{trustees}\_\mathsf{hash}$
   (see [Trustees Hash]) in little-endian byte order.
 - $\mathsf{cp}\_\mathsf{lo}, \mathsf{cp}\_\mathsf{hi} \in \{ 0 .. 2^{128}-1 \}$
-  — the low and high 128-bit halves of the creator's public key
+  — the low and high 128-bit halves of the poll creator's public key
   $\mathsf{creator}\_\mathsf{pk}$ (see [Poll Creation]) in little-endian
   byte order.
 
@@ -895,7 +901,7 @@ $\mathsf{nc}\_\mathsf{root}$ are themselves Poseidon-derived in
 their respective trees and are therefore already canonical.
 
 The identifier binds everything that defines a round: its snapshot,
-its proposals, its deadlines, its trustees and its creator. Two round
+its proposals, its deadlines, its trustees and its poll creator. Two round
 creation transactions with the same identifier describe the same round,
 and only the first recorded can be effective (see [Poll Creation]). The
 identifier does not depend on the election authority public key, which
@@ -1664,8 +1670,7 @@ window has closed and the round's VCT has been frozen (see
 per share and submits the resulting messages as specified in
 [Share Submission]. No party other than the voter's client constructs a
 Vote Reveal Proof or handles a finished message before it is recorded;
-see [Why the Client Constructs Reveal Proofs] and
-[Why There Are No Relays].
+see [Why the Client Constructs Reveal Proofs].
 
 ### Vote Reveal Proof
 
@@ -1896,7 +1901,7 @@ submitted as if by $N_s$ unrelated clients:
 **Being online.** Direct submission requires the client to be online at
 each drawn height. No party in this protocol accepts a message for
 later submission, and a client MUST NOT delegate submission to any
-party (see [Why There Are No Relays]). A client that is not running at
+party (see [Why ZIP 318 Scheduling]). A client that is not running at
 a drawn height submits under the catch-up rules in
 [Submission Timing].
 
@@ -1927,14 +1932,28 @@ client to return more than once. Rule 1 still applies under express
 reveal; without it, the vote's origin is also exposed to the node that
 receives the burst. See [Why Express Reveal Exists].
 
-**Retry.** A client SHOULD confirm that each of its messages has been
-recorded on the vote chain. A client that observes that a message has
-not been recorded within a client-configured number of blocks MAY
+**Confirming inclusion.** A client SHOULD confirm that each of its
+messages has been recorded, and does so without disclosing which share
+nullifiers are its own. A client that holds the record, because it
+runs its own vote chain node, reads it. Any other client queries a
+nullifier service by private information retrieval: the service builds
+the exclusion tree of `draft-valargroup-nullifier-pir`
+[^nullifier-pir] over the share nullifiers of every share reveal
+transaction recorded for the round as of a stated vote chain height,
+re-exports it at a published cadence, and serves it exactly as it
+serves the snapshot's nullifier set; the client retrieves the
+authentication data for its own share nullifier as it would for an
+exclusion proof. A nullifier the tree contains is recorded; one it
+does not contain is not recorded as of that height. A client MUST NOT
+ask any party about a share nullifier in the clear, and MUST apply
+rule 1 to each query. The reconciliation the catch-up rules in
+[Submission Timing] require is performed by these means.
+
+**Retry.** A client that observes that a message has not been recorded
+within a client-configured number of blocks after its drawn height MAY
 resubmit it, to a different node, under rule 1 above. Because a share
 nullifier is effective once, a duplicate is not effective and is
-harmless. Confirming inclusion by querying a node for the client's own
-share nullifiers reveals which nullifiers are the client's; see
-[Open issues].
+harmless.
 
 ### Submission Timing
 
@@ -2054,8 +2073,8 @@ $\mathsf{ea}\_\mathsf{sk}$ at any point, and no step of the procedure
 is performed by the vote chain.
 
 Let $t$ be the round's decryption threshold, and let each of the
-round's $n$ trustees $i \in \{1 \ldots n\}$ hold the key share
-$\mathsf{sk}_i$ of $\mathsf{ea}\_\mathsf{sk}$, with trustee share key
+round's $n$ trustees $i \in \{1 \ldots n\}$ hold the secret share
+$\mathsf{sk}_i$ of $\mathsf{ea}\_\mathsf{sk}$, with trustee public share
 $\mathsf{pk}_i = [\mathsf{sk}_i]\, G$, as produced by
 [Election Authority Key Ceremony]. The shares are Shamir shares
 [^shamir] on a polynomial of degree $t - 1$, so any $t$ of them suffice.
@@ -2091,7 +2110,7 @@ together with a Chaum-Pedersen DLEQ proof, as specified in
 $H = C_{1,\mathsf{agg}}$, $Q = D_i$ and witness $x = \mathsf{sk}_i$.
 The proof demonstrates
 $\log_G(\mathsf{pk}_i) = \log_{C_{1,\mathsf{agg}}}(D_i)$, establishing
-that the share behind the trustee's share key is the share used to
+that the share behind the trustee's public share is the share used to
 compute $D_i$.
 
 A partial decryption transaction is effective if and only if it is
@@ -2176,15 +2195,19 @@ effective round creation transaction is recorded.
    the reveal window. Voters construct and submit their share reveal
    messages (see [Share Submission] and [Submission Timing]).
 4. **TALLYING**: heights above
-   $\mathsf{reveal}\_\mathsf{end}\_\mathsf{height}$. Partial decryption
-   transactions are effective only when recorded in this state. The
-   round has a tally once effective partial decryptions from at least
-   $t$ trustees exist (see [Tally]); any party computes it at any later
-   time, and the record never closes.
-5. **CANCELLED**: a round for which an effective cancellation
+   $\mathsf{reveal}\_\mathsf{end}\_\mathsf{height}$, until the round
+   is COMPLETED. Partial decryption transactions are effective only
+   when recorded in this state. Shares that were never revealed
+   contribute nothing, and nothing waits for them.
+5. **COMPLETED**: from the height at which effective partial decryption
+   transactions from at least $t$ trustees exist (see [Tally]). The
+   tally is determined by the record, and any party computes and
+   verifies it at any later time. No further transaction of the round
+   is effective.
+6. **CANCELLED**: a round for which an effective cancellation
    transaction exists (see [Cancellation]). No later transaction of the
    round is effective.
-6. **FAILED**: a round that has not become ACTIVE by
+7. **FAILED**: a round that has not become ACTIVE by
    $\mathsf{vote}\_\mathsf{end}\_\mathsf{height}$, because its ceremony
    exhausted its attempts or some trustee never ratified it. No later
    transaction of the round is effective.
@@ -2204,7 +2227,7 @@ specification requires the vote chain to know that any round exists.
 
 ### Proposals and Decisions
 
-The voting process specified by this ZIP allows a poll runner to put
+The voting process specified by this ZIP allows a poll creator to put
 one or more questions — *proposals* — to eligible voters. For each
 proposal, voters choose exactly one of a predefined set of labeled
 *options*; the chosen option is the voter's *decision* for that
@@ -2266,7 +2289,7 @@ expressed through an external layer.
 A voting round is anchored to a Zcash mainnet snapshot: a single
 mainnet block, identified by both its height $H$ (the snapshot height)
 and its hash $\mathsf{snapshot}\_\mathsf{blockhash}$, at which the
-eligible Ironwood pool is captured. The poll runner chooses the block
+eligible Ironwood pool is captured. The poll creator chooses the block
 subject to the following constraints:
 
 - $H$ MUST be at or after the activation of the Ironwood pool.
@@ -2289,10 +2312,10 @@ created, the round is no longer well formed under
 exists, and the eligibility of every vote cast in it is undefined. No
 transaction is needed to abandon it; a trustee MUST NOT ratify or
 decrypt such a round, a wallet MUST NOT take part in it, and a verifier
-treats it as having no result. The poll runner creates a new round.
+treats it as having no result. The poll creator creates a new round.
 
 Choosing the snapshot is the start of round setup, not a single
-automatic action. The poll runner is responsible for the following
+automatic action. The poll creator is responsible for the following
 coordinated activities:
 
 1. **Read the snapshot roots.** The Ironwood pool note commitment
@@ -2303,12 +2326,12 @@ coordinated activities:
    `draft-valargroup-orchard-balance-proof` [^balance-proof], on
    the chain whose block at height $H$ has hash
    $\mathsf{snapshot}\_\mathsf{blockhash}$. No party has discretion over
-   their values. The poll runner reads them from a Zcash consensus node
+   their values. The poll creator reads them from a Zcash consensus node
    as specified in [Reading the Snapshot Roots].
 
 2. **Ensure the nullifier service has the snapshot's PIR
    database.** Where the deployment offers a nullifier service, the
-   poll runner coordinates with each nullifier service operator (see
+   poll creator coordinates with each nullifier service operator (see
    the "Nullifier Service Operator" section of
    `draft-valargroup-shielded-voting-setup` [^voting-setup]) so that
    their ingest and export pipelines (see the "Nullifier Service"
@@ -2358,7 +2381,7 @@ The construction in `draft-valargroup-orchard-balance-proof`
 $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$, and a Zcash consensus
 node that serves it MUST implement that construction.
 
-**Who performs it.** The poll runner MUST perform it before creating a
+**Who performs it.** The poll creator MUST perform it before creating a
 round. Each trustee MUST perform it, against a Zcash consensus node
 under its own control, before ratifying a round (see [Ratification]).
 Each wallet MUST perform it, against the Zcash consensus node it
@@ -2374,7 +2397,9 @@ Any account MAY create a voting round by recording a round creation
 transaction (see [Round Creation Transaction]). The transaction carries:
 
 - $\mathsf{creator}\_\mathsf{pk}$, the Ed25519 public key under which
-  the transaction is signed; its holder is the round's **creator**.
+  the transaction is signed; its holder is the round's **poll
+  creator**, and the same key signs the round's configuration (see
+  [Poll Signature]).
 - `snapshot_height` and `snapshot_blockhash` (see
   [Snapshot Configuration]).
 - `nc_root` and `nullifier_imt_root`, the snapshot roots (see
@@ -2415,9 +2440,11 @@ A round creation transaction is effective if and only if:
 Nothing in the record verifies the snapshot roots; see
 [Reading the Snapshot Roots] for who does. Creating a round requires
 no privileged role: any well-formed round is recorded, and a round
-that no trustee ratifies never opens. The creator has one power over
-the round beyond having named its parameters: it MAY cancel the round
-while it is pending (see [Cancellation]).
+that no trustee ratifies never opens. The poll creator has one power
+over the round beyond having named its parameters: it MAY cancel the
+round while it is pending (see [Cancellation]). It is not otherwise
+trusted; what a wallet takes from it is the trustee set, on which the
+protocol's trust assumptions rest.
 
 The round enters PENDING at $H_c$, and the key ceremony begins in the
 following block (see [Election Authority Key Ceremony]). Once the
@@ -2431,11 +2458,13 @@ deadline compresses its schedule rather than concentrating its weight.
 
 ### Poll Signature
 
-The poll runner publishes a round to wallets as a vote configuration,
+The poll creator publishes a round to wallets as a vote configuration,
 as specified in `draft-valargroup-shielded-voting-wallet-api`
-[^wallet-api], and signs it. A wallet accepts a configuration only if
-it carries a valid signature from a poll runner key the wallet
-recognises.
+[^wallet-api], and signs it under $\mathsf{creator}\_\mathsf{pk}$,
+the key that signed the round creation transaction. A wallet accepts a
+configuration only if it carries a valid signature from a poll creator
+key the wallet recognises, and only for a round whose creation
+transaction was signed by that key.
 
 The bytes covered by the signature are the concatenation, in this
 order, of:
@@ -2461,7 +2490,7 @@ key may produce, and its version is that of the vote configuration
 format that carries the signature.
 
 The signature establishes that the round — its snapshot, its proposals,
-its deadlines and its trustees — is the one the poll runner is running.
+its deadlines and its trustees — is the one the poll creator is running.
 It does not establish that the snapshot roots are correct or that the
 election authority key is genuine, and a wallet MUST NOT treat it as
 doing so. A wallet verifies those two things itself:
@@ -2485,7 +2514,7 @@ doing so. A wallet verifies those two things itself:
   to.
 
 Because the signature does not cover $\mathsf{ea}\_\mathsf{pk}$, the
-poll runner can publish and sign a configuration as soon as the round
+poll creator can publish and sign a configuration as soon as the round
 is created, and wallets can authenticate it before the round opens.
 
 ### Election Authority Key Ceremony
@@ -2521,7 +2550,7 @@ are encrypted. Let $n$ be their number and index them $1, \ldots, n$
 in the order the round creation transaction lists them; a trustee's
 index is its evaluation point. The round's decryption threshold is
 $t = \lceil n/2 \rceil + 1$, with a minimum of 2. How trustees are
-selected and how the poll runner obtains their keys is specified in
+selected and how the poll creator obtains their keys is specified in
 `draft-valargroup-shielded-voting-setup` [^voting-setup]. A trustee
 MUST NOT be a validator of the vote chain, for any round on it.
 
@@ -2602,7 +2631,7 @@ $$\mathsf{ea}\_\mathsf{pk} = \sum_{i=1}^{n} A_{i,0}$$
 
 $$\mathsf{pk}_j = \sum_{i=1}^{n} \sum_{k=0}^{t-1} [j^k]\, A_{i,k} \quad \text{for each } j \in \{1 \ldots n\}$$
 
-Each trustee $j$ computes its key share
+Each trustee $j$ computes its secret share
 
 $$\mathsf{sk}_j = \sum_{i=1}^{n} f_i(j)$$
 
@@ -2610,7 +2639,7 @@ and MUST verify that $[\mathsf{sk}_j]\, G = \mathsf{pk}_j$ before
 acknowledging. The shares $\mathsf{sk}_j$ are Shamir shares [^shamir]
 of $\mathsf{ea}\_\mathsf{sk} = \sum_i a_{i,0}$ on the degree-$(t-1)$
 polynomial $\sum_i f_i$, so [Tally] applies to them unchanged. Every
-trustee share key $\mathsf{pk}_j$ is computed from recorded values and
+trustee public share $\mathsf{pk}_j$ is computed from recorded values and
 can be recomputed by any party.
 
 **Stage 5: acknowledgement.** Each trustee $j$ that has verified its
@@ -2619,7 +2648,7 @@ requires, records an acknowledgement transaction (see
 [Acknowledgement Transaction]) carrying $\mathsf{ea}\_\mathsf{pk}$ and
 signed by its trustee account key. An acknowledgement is effective
 only if its $\mathsf{ea}\_\mathsf{pk}$ equals the value derived above.
-A trustee MUST NOT acknowledge a share that fails the share key check.
+A trustee MUST NOT acknowledge a share that fails the public share check.
 Committing to $\mathsf{ea}\_\mathsf{pk}$ keeps an acknowledgement from
 carrying over to a rekeyed attempt; the transaction's round identifier
 keeps it from carrying over to another round. This acknowledgement is
@@ -2634,7 +2663,7 @@ attempt are not effective.
 
 **Failure.** An attempt whose Stage 1, 2, 4 or 5 fails is followed by
 the next attempt on the grid. When `max_attempts` attempts have failed
-the round is FAILED (see [Round Lifecycle]), and the poll runner MAY
+the round is FAILED (see [Round Lifecycle]), and the poll creator MAY
 create a new round with an amended trustee set. A pending round MAY
 also be cancelled at any time (see [Cancellation]), which is the
 prompt path when a trustee is known not to be taking part.
@@ -2648,8 +2677,8 @@ in any other round.
 ### Ratification
 
 The poll signature ([Poll Signature]) establishes that a round is the
-one its poll runner is running. It does not establish that the round
-will be tallied. Those are different parties: the poll runner
+one its poll creator is running. It does not establish that the round
+will be tallied. Those are different parties: the poll creator
 configures a round, and the trustees decrypt its result. A round can be
 correctly configured, voted in, and never opened.
 
@@ -2682,8 +2711,8 @@ ratified is visibly departing from a recorded statement. See
 ### Cancellation
 
 A pending round can be withdrawn before it opens. Any trustee of the
-round, or its creator, MAY record a cancellation transaction (see
-[Cancellation Transaction]), signed by its trustee account key or by
+round, or its poll creator, MAY record a cancellation transaction (see
+[Round Cancellation Transaction]), signed by its trustee account key or by
 $\mathsf{creator}\_\mathsf{pk}$ respectively. A cancellation is
 effective if and only if the round is PENDING at the height at which
 it is recorded. From that height the round is CANCELLED: no ceremony,
@@ -2694,7 +2723,7 @@ belongs to.
 Cancellation exists so that a round stalled by a trustee that will not
 take part can be replaced at once, rather than after every attempt on
 the ceremony grid has run out, and so that a late acknowledgement
-cannot open a round its poll runner has already replaced. It confers
+cannot open a round its poll creator has already replaced. It confers
 no power a trustee does not already have: any trustee can keep a round
 from opening by not ratifying it, and cancellation makes that outcome
 immediate and recorded. It is not available once a round is ACTIVE,
@@ -2741,6 +2770,22 @@ record — a wallet, a trustee, a tallier, an auditor, or a vote chain
 node offering a query interface — applies the same rules to the same
 record and derives the same result.
 
+This ZIP requires of the vote chain only the following, and any chain
+that provides it serves:
+
+1. It records transactions in a total order, each at a block height,
+   append-only: a recorded transaction is never removed or reordered
+   once its block is final.
+2. It records any transaction whose envelope is well formed and whose
+   fee is paid, from whoever submits it, without regard to its payload.
+3. Anyone may run a node that holds the full record and forwards
+   transactions to validators, and a client may submit through any
+   node, including its own.
+4. It charges a fee to record a transaction, which is the only bound
+   on the record's growth.
+5. Its deployment publishes its target block interval (see
+   [Chain parameters]).
+
 What a vote chain transaction's envelope contains — the fee, the
 account that pays it, the chain identifier — is the chain's own
 matter and is out of scope (see [Non-requirements]). This ZIP
@@ -2781,7 +2826,7 @@ From the effective transactions, every party derives, per round:
   transaction;
 - its lifecycle state at every height (see [Round Lifecycle]);
 - the ceremony's progress, $\mathsf{ea}\_\mathsf{pk}$ and every trustee
-  share key $\mathsf{pk}_i$ (see [Election Authority Key Ceremony]);
+  public share $\mathsf{pk}_i$ (see [Election Authority Key Ceremony]);
 - the **Vote Commitment Tree** as defined in [Vote Commitment Tree],
   its root after every height, and its final root;
 - the three **nullifier sets** as defined in [Nullifier Sets];
@@ -2797,9 +2842,8 @@ and a party that wants the assurance derives the state itself.
 
 ### Transaction Inclusion
 
-The vote chain is a CometBFT chain, and its validators determine which
-transactions are recorded. This section states the consequences for a
-voting round.
+The vote chain's validators determine which transactions are
+recorded. This section states the consequences for a voting round.
 
 **What validators do.** Validators record transactions. They apply
 none of this ZIP's rules and need not implement any of them; a
@@ -2844,10 +2888,9 @@ alone. An excluded transaction leaves no trace in the record that
 excluded it. Available signals are: a count of effective votes against
 the count of effective share reveals; the contents of honest vote chain
 nodes' mempools, compared with what was subsequently recorded; and
-voters observing that their own shares never appeared. The last is
-currently unavailable in practice, because a voter querying a node for
-their own share nullifiers reveals which nullifiers are theirs; see
-[Open issues].
+voters observing that their own shares never appeared, which a voter
+can do without disclosing which shares are its own (see
+[Share Submission]).
 
 A deployment SHOULD publish, for each round, the count of share reveal
 transactions accepted into the mempool alongside the count recorded in
@@ -2899,7 +2942,7 @@ round it belongs to, as a little-endian field element.
 | `tx_type` | Transaction |
 |---|---|
 | 1 | [Round Creation Transaction] |
-| 2 | [Cancellation Transaction] |
+| 2 | [Round Cancellation Transaction] |
 | 3 | [Ceremony Commitment Transaction] |
 | 4 | [Ceremony Dealing Transaction] |
 | 5 | [Complaint Transaction] |
@@ -2912,7 +2955,7 @@ round it belongs to, as a little-endian field element.
 
 ### Signed Payloads
 
-Transactions recorded by the creator or by a trustee end with a
+Transactions recorded by the poll creator or by a trustee end with a
 `signature` (`ed25519sig`) by the signer's Ed25519 key — the trustee
 account key, or $\mathsf{creator}\_\mathsf{pk}$ — over the byte
 string
@@ -2955,7 +2998,7 @@ trustee's acknowledgement by its account key.
 | Field | Type | Description |
 |---|---|---|
 | `tx_type` | `u8` | 1 |
-| `creator_pk` | `ed25519pk` | The creator's key, $\mathsf{creator}\_\mathsf{pk}$ |
+| `creator_pk` | `ed25519pk` | The poll creator's key, $\mathsf{creator}\_\mathsf{pk}$ |
 | `snapshot_height` | `u64` | Zcash mainnet snapshot height |
 | `snapshot_blockhash` | `bytes[32]` | Hash of the snapshot block, in the byte order of the Zcash block header |
 | `nc_root` | `fe` | Ironwood pool note commitment tree root at the snapshot |
@@ -2995,13 +3038,13 @@ A `Trustee` is:
 
 The rules for effectiveness are in [Poll Creation].
 
-### Cancellation Transaction
+### Round Cancellation Transaction
 
 | Field | Type | Description |
 |---|---|---|
 | `tx_type` | `u8` | 2 |
 | `voting_round_id` | `bytes[32]` | |
-| `signer` | `u8` | 0 for the creator; otherwise the trustee's index, 1 to $n$ |
+| `signer` | `u8` | 0 for the poll creator; otherwise the trustee's index, 1 to $n$ |
 | `signature` | `ed25519sig` | By `creator_pk` if `signer` is 0, else by trustee `signer`'s account key |
 
 The rules for effectiveness are in [Cancellation].
@@ -3471,7 +3514,7 @@ With content linkage removed, the remaining channel is metadata:
 submission height and network origin. Those are addressed by the
 memoryless schedule in [Submission Timing] and the per-share network
 isolation rules in [Share Submission], and by there being no party
-between the client and the chain (see [Why There Are No Relays]).
+between the client and the chain.
 
 Limiting what one decryption reveals depends on the decomposition
 strategy. Under an even split, one decrypted share determines the total
@@ -3592,45 +3635,6 @@ have anything to protect: a server told which shares belong together
 does not need to infer it. With the client holding everything and the
 payload reduced to the message itself, those measures are effective,
 and [Share Submission] requires them.
-
-## Why There Are No Relays
-
-A store-and-forward relay is a natural addition once the client
-constructs its own proofs: a client that will not be online across its
-submission schedule hands each finished message to a relay with the
-height at which to submit it. Such a relay receives nothing a chain
-observer would not, and a rule can limit it to one message per vote.
-This protocol has no relay, for two reasons.
-
-The first is that delayed submission is the client's duty. The
-schedule in [Submission Timing] protects the voter only if the client
-carries it out, and a party that submits on the client's behalf holds,
-for each message it is given, the client's network origin and the
-requested time, which are the two quantities the schedule exists to
-decorrelate. ZIP 318 faces the same problem for pool-crossing
-transfers and resolves it the same way: the wallet comes online to
-submit, in background sessions where the platform allows and on the
-next application open where it does not, one overdue transaction at a
-time. This ZIP adopts those rules.
-
-The second is that the one-message-per-relay rule meant to contain a
-relay's view is itself a leak. It makes the assignment of a vote's
-messages to relays a random injection rather than independent draws,
-so any two messages at one relay are known to belong to different
-votes, and a coalition observing several relays can use that to prune
-the pairings it has to consider. A rule that exists to protect against
-a relay that has received two shares of one vote, which the network
-isolation rules already forbid the client to allow, pays for that
-protection with information given to every relay.
-
-Without relays, the only party that ever holds a share reveal message
-before it is recorded is the client that built it, and the only
-metadata any party sees is what the vote chain node receiving a single
-submission sees. Availability is the client's problem, as it is for
-every other transaction a wallet sends; the reveal window is sized so
-that ordinary wallet use covers it (see [Why a Separate Reveal Window]),
-and a voter who would rather not return across it can choose express
-reveal (see [Why Express Reveal Exists]).
 
 ## Why There Is No Single-Share Mode
 
@@ -3753,10 +3757,14 @@ reviewed in that context and need not be re-derived here.
 ZIP 318's rules for a wallet that is not running when a transaction
 falls due — best-effort background sessions that broadcast without
 synchronising, reconciliation on every application open, and at most
-one overdue transaction per open — are adopted as well, because a
-wallet that cannot be relied on to be online is the case a relay would
-otherwise serve, and these rules are how ZIP 318 handles it without
-any third party (see [Why There Are No Relays]).
+one overdue transaction per open — are adopted as well. Delayed
+submission is the client's duty: the schedule protects the voter only
+if the client carries it out, and any party that submitted on the
+client's behalf would hold, for each message, the client's network
+origin and the requested height, which are the two quantities the
+schedule exists to decorrelate. These rules are how ZIP 318 handles a
+wallet that cannot be relied on to be online without any third party,
+and this ZIP handles it the same way.
 
 Two differences from ZIP 318 are deliberate. First, delays here are
 expressed in vote chain block deltas against the round's
@@ -3868,7 +3876,7 @@ chain supplies the authenticated, ordered broadcast channel the
 protocol assumes.
 
 The output is a set of Shamir shares of a key that exists only as a
-sum, and every downstream step — trustee share keys, partial
+sum, and every downstream step — trustee public shares, partial
 decryptions, DLEQ proofs and Lagrange combination — is the same as it
 would be under a dealer.
 
@@ -3982,7 +3990,7 @@ round that opens with exactly that many committed has no margin for the
 loss of any of them.
 
 Unanimity gives every trustee a veto over opening, exercised by doing
-nothing. [Cancellation] gives the same parties, and the creator, a way
+nothing. [Cancellation] gives the same parties, and the poll creator, a way
 to exercise it explicitly and at once, so that a round stalled by one
 trustee can be replaced without waiting for the ceremony grid to run
 out and without the replaced round later opening on a late
@@ -4066,10 +4074,10 @@ height is an estimate.
 | Parameter | Why it is published |
 |---|---|
 | The decryption threshold $t$ and trustee count $n$ | Bounds every amount-privacy claim in the protocol; see [Election Authority Key Ceremony]. |
-| The organisation acting as each trustee, its account key and its ceremony key | Allows the role separation required in [Requirements] to be checked, lets wallets verify acknowledgements, and lets any party recompute the trustee share keys. |
+| The organisation acting as each trustee, its account key and its ceremony key | Allows the role separation required in [Requirements] to be checked, lets wallets verify acknowledgements, and lets any party recompute the trustee public shares. |
 | `stage_window` and `max_attempts` | Round creation fields that set the ceremony grid; see [Election Authority Key Ceremony]. |
 | The reveal window length, $\mathsf{reveal}\_\mathsf{end}\_\mathsf{height} - \mathsf{vote}\_\mathsf{end}\_\mathsf{height}$ | Bounds the period in which a wallet must return to reveal; see [Round Lifecycle]. |
-| The poll runner and its signing key | Establishes whose poll signature wallets recognise; see [Poll Signature]. |
+| The poll creator and its signing key | Establishes whose poll signature wallets recognise; see [Poll Signature]. |
 | $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
 | The trustee share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
 | The validator stake distribution | Sizes the coalition able to exclude transactions; see [Transaction Inclusion]. |
@@ -4094,17 +4102,7 @@ circuits determine what the proofs mean.
 
 # Reference implementation
 
-No implementation conforming to this ZIP is available at the time of
-writing. The following components are expected to be adapted to it:
-
-- [^ref-circuits] — Halo 2 circuits for the Delegation Proof, Vote
-  Proof, and Vote Reveal Proof.
-- [^ref-vote-sdk] — Cosmos SDK vote chain.
-- [^ref-nullifier-pir] — PIR server and client for privately retrieving
-  nullifier non-membership proofs.
-- [^ref-librustvoting] — Client-side Rust library for proof generation,
-  vote construction, tree synchronization, and governance PCZT
-  construction.
+No reference implementation of this ZIP exists at the time of writing.
 
 
 # Open issues
@@ -4141,14 +4139,6 @@ writing. The following components are expected to be adapted to it:
   out of scope; that exclusion should be revisited, because the
   combination of a permanent public record and a non-post-quantum
   encryption layer means the exposure above has no expiry.
-- Voters have no privacy-preserving way to confirm that their shares
-  were included on the vote chain. A voter can observe the chain, but
-  querying it for their own share nullifiers reveals which nullifiers
-  are theirs. A private-retrieval confirmation mechanism would close
-  this; adapting one for share nullifier
-  queries requires additional specification. Until then, a voter cannot
-  verify their own vote was counted, and omission of a share is not
-  detectable by the voter who cast it.
 - A voter who is the sole participant on an unpopular option may have
   their exact balance revealed by the tally, since the aggregate for
   that option equals their individual contribution. An opt-in mechanism
@@ -4235,10 +4225,3 @@ writing. The following components are expected to be adapted to it:
 
 [^pczt]: [zcash/zips issue #693: Standardize a protocol for creating shielded transactions offline (PCZT)](https://github.com/zcash/zips/issues/693)
 
-[^ref-circuits]: [valargroup/voting-circuits: Halo 2 ZKP circuits for shielded voting](https://github.com/valargroup/voting-circuits)
-
-[^ref-vote-sdk]: [valargroup/vote-sdk: Cosmos SDK vote chain for shielded voting](https://github.com/valargroup/vote-sdk)
-
-[^ref-nullifier-pir]: [valargroup/vote-nullifier-pir: PIR system for nullifier non-membership proofs](https://github.com/valargroup/vote-nullifier-pir)
-
-[^ref-librustvoting]: [valargroup/librustvoting: Client-side voting library for proof generation and vote construction](https://github.com/valargroup/librustvoting)
