@@ -64,17 +64,17 @@ Nullifier exclusion proof
   wallet constructs one locally or retrieves one as specified in
   [Nullifier Exclusion Proof Retrieval].
 
-Poll runner
+Poll creator
 
-: The party that runs a voting round and signs the vote configuration
-  by which wallets find it. A wallet recognises a poll runner by a
-  public key held in the wallet's own configuration. See
-  [Configuration Authentication] and the "Poll Signature" section of
-  [^voting-protocol].
+: The party that creates a voting round and signs, under the same key,
+  the vote configuration by which wallets find it. A wallet recognises
+  a poll creator by a public key held in the wallet's own
+  configuration. See [Configuration Authentication] and the "Poll
+  Signature" section of [^voting-protocol].
 
 Poll signature
 
-: The poll runner's signature over a round's defining fields, carried
+: The poll creator's signature over a round's defining fields, carried
   in the configuration's `poll_signature` field and verified as
   specified in [Configuration Authentication].
 
@@ -107,7 +107,9 @@ Share
 Share nullifier
 
 : The value a share reveal publishes to prevent a share being counted
-  twice, derived as specified in [Share Nullifier].
+  twice, derived as specified in [Share Nullifier]. A wallet confirms
+  that its own reveals were recorded by a private query for their
+  nullifiers; see [Share Inclusion Confirmation].
 
 Share reveal message
 
@@ -153,7 +155,7 @@ Vote commitment tree
 
 Vote configuration
 
-: The JSON document, signed by the poll runner, by which a wallet
+: The JSON document, signed by the poll creator, by which a wallet
   discovers a vote round and the services that serve it. See
   [Vote Configuration Format].
 
@@ -185,7 +187,7 @@ Zcash consensus node
 This ZIP specifies the REST API endpoints, wire formats, and discovery
 mechanism that wallet clients use to participate in shielded on-chain
 voting rounds. It covers vote round discovery via a per-vote
-configuration document signed by the round's poll runner, the checks by
+configuration document signed by the round's poll creator, the checks by
 which a wallet verifies a round's snapshot roots and election authority
 key for itself, data query endpoints for reading chain state,
 transaction submission endpoints for delegation, vote casting and share
@@ -249,7 +251,7 @@ generation), specified in [^voting-protocol] and [^voting-setup].
 which any party interprets its record, which are specified in
 [^voting-protocol]. A vote server applies those rules to serve the
 endpoints below; a wallet MAY apply them itself instead.
-- Round creation and the poll runner's operations.
+- Round creation and the poll creator's operations.
 
 # High level summary
 
@@ -287,7 +289,7 @@ See [Version Handling] for the normative rules.
    fails.
 
 3. **Verify the poll signature.** Verify `poll_signature` against a
-   recognised poll runner key per [Configuration Authentication].
+   recognised poll creator key per [Configuration Authentication].
    Reject the configuration and stop if it does not verify.
 
 4. **Verify the snapshot roots.** Confirm `snapshot_blockhash`,
@@ -302,7 +304,7 @@ See [Version Handling] for the normative rules.
    [Active Round].
 
 6. **Bind the round to the configuration.** Confirm that the chain's
-   round carries exactly the values the poll runner signed, including
+   round carries exactly the values the poll creator signed, including
    the proposals hash computed from the configuration's `proposals`
    array, and that every trustee in the configuration has acknowledged
    the round's `ea_pk` (fetched via [Round Acknowledgements]). See
@@ -393,10 +395,11 @@ to the user.
     messages submitted within this session instead. See
     [Share Submission] and [Network Isolation].
 
-19. **Optionally confirm inclusion.** A wallet MAY check
-    `GET /shielded-vote/v1/share-status/{roundId}/{nullifier}`, subject
-    to the privacy caveats in [Share Status]. This is not a required
-    step.
+19. **Confirm inclusion.** Confirm that each message was recorded,
+    from the wallet's own vote chain node or by a private query to a
+    `pir_endpoints` server, as specified in
+    [Share Inclusion Confirmation]. Never ask any server about a share
+    nullifier in the clear.
 
 ## Results (optional)
 
@@ -453,7 +456,7 @@ participate in the round.
     "vote_server": "v1"
   },
   "poll_signature": {
-    "key_id": "poll-runner-1",
+    "key_id": "poll-creator-1",
     "alg": "ed25519",
     "sig": "<base64, 64 bytes>"
   }
@@ -468,7 +471,7 @@ participate in the round.
 | `config_version`                   | integer          | Schema version of this configuration document. This specification defines version 4.                                           |
 | `vote_round_id`                    | string           | Hex-encoded 32-byte vote round identifier (64 characters, lowercase).                                                          |
 | `vote_servers`                     | array            | One or more vote server base URLs serving the chain query and transaction submission endpoints. Each entry has `url` (string) and `label` (string). |
-| `pir_endpoints`                    | array            | One or more nullifier PIR server base URLs. Each entry has `url` and `label`.                                                  |
+| `pir_endpoints`                    | array            | One or more nullifier service base URLs, serving both the snapshot nullifier set and the round's share nullifier set by PIR. Each entry has `url` and `label`. |
 | `snapshot_height`                  | integer          | Zcash block height at which the Ironwood pool snapshot was taken.                                                              |
 | `snapshot_blockhash`               | string           | Base64-encoded 32-byte hash of the Zcash block at `snapshot_height`.                                                           |
 | `nc_root`                          | string           | Base64-encoded 32-byte Ironwood pool note commitment tree root at the snapshot.                                                |
@@ -529,18 +532,21 @@ at least one version the wallet supports.
 
 ### Configuration Authentication
 
-A wallet holds a **recognised poll runner set**: a list of poll runner
-public keys, each with a `key_id` and an `alg`. The set is part of the
-wallet's own configuration, not of any vote configuration document; how
-it is provisioned is outside the scope of this specification. A key
-absent from the set is not a poll runner as far as the wallet is
-concerned, whatever a configuration says about it.
+A wallet holds a **recognised poll creator set**: a list of poll
+creator public keys, each with a `key_id` and an `alg`. The set is part
+of the wallet's own configuration, not of any vote configuration
+document; how it is provisioned is outside the scope of this
+specification. A key absent from the set is not a poll creator as far
+as the wallet is concerned, whatever a configuration says about it.
+The same key signs the round creation transaction, so a wallet also
+checks, in [Binding to the Chain Round], that the chain round's
+`creator_pk` is the key that signed the configuration.
 
 A configuration carries exactly one signature, `poll_signature`. To
 verify it, a wallet:
 
 1. MUST resolve `poll_signature.key_id` to a key in its recognised poll
-   runner set. If no key matches, the signature is invalid.
+   creator set. If no key matches, the signature is invalid.
 2. MUST verify that `poll_signature.alg` matches the `alg` of the
    resolved key. If they differ, the signature is invalid.
 3. MUST verify `poll_signature.sig` over the bytes defined in the
@@ -562,14 +568,14 @@ verify it, a wallet:
 A wallet MUST accept a configuration only if all three steps succeed.
 
 The signature establishes that the round — its snapshot, its
-proposals, its deadlines and its trustees — is the one the poll runner
+proposals, its deadlines and its trustees — is the one the poll creator
 is running. It does not establish that the snapshot roots are correct
 or that the election authority key is genuine, and a wallet MUST NOT
 treat it as doing so: the wallet checks the roots itself
 ([Snapshot Verification]) and the key against the trustees'
 acknowledgements ([Binding to the Chain Round]). One signature suffices
 because nothing more is claimed by it. The signed bytes do not include
-`ea_pk`, which does not exist when the poll runner signs, nor the
+`ea_pk`, which does not exist when the poll creator signs, nor the
 endpoint lists or `block_time_seconds`, which are conveniences; a
 configuration can therefore be signed and verified before the round
 opens.
@@ -588,7 +594,7 @@ label.
 
 ### Snapshot Verification
 
-The poll signature establishes which round the poll runner is running,
+The poll signature establishes which round the poll creator is running,
 not that the round's snapshot roots are correct, and no third party
 vouches for the roots on the wallet's behalf. Before taking part in a
 round — before delegating, voting or submitting any share — a wallet
@@ -636,9 +642,11 @@ the same `vote_round_id`, `snapshot_height`, `snapshot_blockhash`,
 `nc_root`, `nullifier_imt_root`, `vote_end_height` and
 `reveal_end_height` as the authenticated configuration, that its
 `proposals_hash` equals the hash of the configuration's `proposals`
-computed per [Proposals Hash], and that its `trustees` carry the
-configuration's `account_pk` values in the same order. A wallet MUST
-NOT take part in a round that fails this check.
+computed per [Proposals Hash], that its `trustees` carry the
+configuration's `account_pk` values in the same order, and that its
+`creator_pk` is the key that verified the configuration's
+`poll_signature`. A wallet MUST NOT take part in a round that fails
+this check.
 
 **Election authority key.** `ea_pk` is derived from the ceremony's
 recorded commitments when the key ceremony completes and is not part
@@ -668,7 +676,7 @@ commitments, in which case the acknowledgement check confirms that the
 trustees hold shares of the key it derived.
 
 Without the equality check a vote server can supply snapshot roots or
-deadlines other than those the poll runner signed. Without the
+deadlines other than those the poll creator signed. Without the
 acknowledgement check it could supply an `ea_pk` of its own, to which
 the wallet would then encrypt every share; it cannot produce
 acknowledgements of that key without the trustees' account keys.
@@ -1163,46 +1171,39 @@ origin of every message it forwards.
 
 Each share has a deterministic nullifier derived from the vote
 commitment, the share index and the share's blind factor. The wallet
-computes this nullifier locally and hex-encodes it (lowercase, 64
-characters) for use in the [Share Status] endpoint path. The
-derivation is specified in [^voting-protocol].
+computes this nullifier locally. The derivation is specified in
+[^voting-protocol].
 
-### Share Status
+### Share Inclusion Confirmation
 
-```
-GET /shielded-vote/v1/share-status/{roundId}/{nullifier}
-```
+A wallet confirms that a share reveal message was recorded without
+disclosing which share nullifiers are its own. There is no endpoint
+that answers a share nullifier query in the clear, and a wallet MUST
+NOT ask any server about a share nullifier in the clear.
 
-Reports whether a share nullifier has been recorded on the vote chain.
+A wallet that runs its own vote chain node reads the record. Any other
+wallet queries a `pir_endpoints` server for the round's **share
+nullifier set** by private information retrieval, as specified in
+[^nullifier-pir] and in the "Share Submission" section of
+[^voting-protocol]: the server maintains the exclusion tree over the
+share nullifiers recorded for the round as of a stated vote chain
+height, re-exported at the cadence the deployment publishes, and the
+wallet retrieves the authentication data for its own nullifier exactly
+as it retrieves an exclusion proof. A nullifier the tree contains is
+recorded; one it does not contain is not recorded as of the export's
+height, which the server states with the database. The database is
+selected by the round identifier and the export height, and version
+selection follows [Version Handling].
 
-**Path parameters:**
+A wallet SHOULD issue each such query over a fresh network path (see
+[Network Isolation]), SHOULD query at most one nullifier per path, and
+SHOULD do so at heights unrelated to the vote's submission schedule.
+The reconciliation on open that [Submission Timing] requires is
+performed by these means.
 
-- `roundId`: Hex-encoded 32-byte vote round identifier (64 characters).
-- `nullifier`: Hex-encoded 32-byte share nullifier (64 characters),
-  computed as specified in [Share Nullifier].
-
-**Response body:**
-
-```json
-{"status": "pending"}
-```
-
-| Field    | Type   | Description                                                                                       |
-| -------- | ------ | ------------------------------------------------------------------------------------------------- |
-| `status` | string | `"pending"` if not yet on-chain, `"confirmed"` if the share nullifier has been recorded on-chain. |
-
-Querying a vote server for one's own share nullifiers
-reveals to it which nullifiers are one's own; this is recorded as an
-open issue in [^voting-protocol]. A wallet SHOULD therefore make status
-polling optional and off by default. A wallet that does poll SHOULD
-issue each query over a fresh network path (see [Network Isolation]),
-SHOULD query at most one nullifier per path, and SHOULD do so at times
-unrelated to the vote's submission schedule. A wallet MUST NOT require
-a confirmed status before proceeding with any other step.
-
-A wallet that observes, by whatever means, that a message has not been
-recorded within a wallet-configured number of blocks MAY resubmit it
-under the retry rules of [^voting-protocol], to a different vote
+A wallet that observes that a message has not been recorded within a
+wallet-configured number of blocks after its drawn height MAY resubmit
+it under the retry rules of [^voting-protocol], to a different vote
 server and over a fresh network path. A duplicate that is recorded is
 not effective, by its nullifier, and is harmless.
 
@@ -1550,9 +1551,6 @@ volumes involved.
 
 # Open issues
 
-- [Share Status] lets a wallet confirm inclusion only by disclosing
-  which nullifiers are its own. A private-retrieval confirmation
-  mechanism is an open issue in [^voting-protocol].
 - `block_time_seconds` is unsigned and informational, and the chain's
   observed interval drifts from the published target. A wallet that
   sizes its submission schedule from a wrong value spreads its
@@ -1583,6 +1581,8 @@ be adapted to it is at
 [^rfc4648]: [RFC 4648: The Base16, Base32, and Base64 Data Encodings](https://www.rfc-editor.org/rfc/rfc4648)
 
 [^zip-0318]: [ZIP 318: Orchard to Ironwood Migration](zip-0318.md)
+
+[^nullifier-pir]: [Draft ZIP: Nullifier Private Information Retrieval](draft-valargroup-nullifier-pir.md)
 
 [^voting-protocol]: [Draft ZIP: Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
 
