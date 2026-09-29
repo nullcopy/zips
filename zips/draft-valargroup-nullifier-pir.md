@@ -3262,7 +3262,7 @@ three-tier Poseidon tree, the Tier 1 / Tier 2 query orchestration described in t
 
 [^NIST-Kyber-FAQ]: [Kyber-512 FAQ](https://csrc.nist.gov/csrc/media/Projects/post-quantum-cryptography/documents/faq/Kyber-512-FAQ.pdf). NIST Post-Quantum Cryptography project, December 2023.
 
-[^Bernstein2020]: [A discretization attack](https://cr.yp.to/papers/discretization-20200918.pdf). Daniel J. Bernstein, 2020.
+[^Bernstein2020]: [A discretization attack](https://cr.yp.to/papers.html#discretization). Daniel J. Bernstein, 2020.
 
 [^ChaCha20]: [ChaCha20 and Poly1305 for IETF Protocols (RFC 8439)](https://www.rfc-editor.org/rfc/rfc8439)
 
