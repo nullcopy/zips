@@ -3303,12 +3303,10 @@ bound and does not benefit from wider SIMD lanes.
 
 # Reference implementation
 
-The underlying PIR primitive is implemented in the YPIR library [^ypir-impl],
-which provides the single-server private information retrieval scheme described
-in [^YPIR], including the YPIR+SP variant used by this ZIP.
-
-A full reference implementation of the application-specific layers — the
-three-tier Poseidon tree, the Tier 1 / Tier 2 query orchestration described in this ZIP — is provided in [^nullifier-pir-impl].
+No reference implementation of this ZIP exists at the time of writing.
+The PIR primitive it uses is implemented in the YPIR library
+[^ypir-impl], which provides the single-server private information
+retrieval scheme described in [^YPIR], including the YPIR+SP variant.
 
 
 
@@ -3361,8 +3359,6 @@ three-tier Poseidon tree, the Tier 1 / Tier 2 query orchestration described in t
 [^ChaCha20]: [ChaCha20 and Poly1305 for IETF Protocols (RFC 8439)](https://www.rfc-editor.org/rfc/rfc8439)
 
 [^Poseidon]: [Poseidon: A New Hash Function for Zero-Knowledge Proof Systems](https://eprint.iacr.org/2019/458)
-
-[^nullifier-pir-impl]: [Nullifier PIR reference implementation](https://github.com/valargroup/vote-nullifier-pir)
 
 [^ypir-impl]: [YPIR reference implementation (artifact branch)](https://github.com/menonsamir/ypir/tree/artifact)
 
