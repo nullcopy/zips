@@ -553,6 +553,26 @@ re-exports at a cadence the deployment publishes, and answers each
 query against one labelled instantiation only. A client interprets a
 non-membership answer as "not a member as of that height".
 
+An exclusion proof against a snapshot set is checked by the consuming
+protocol against a root its parties obtained independently of the
+server (see [Nullifier Service Operation]), so a server that serves a
+different tree serves proofs that fail. A membership answer against a
+growing set has no such external root unless the consuming protocol
+supplies one, and without it the answer establishes only what the
+server chose to serve: a server that omitted an element from its
+ingest, or that never received it, can export a tree that includes it
+as easily as one that does not. A server MUST therefore publish, with
+each labelled instantiation, the root of the tree it serves at that
+label, and a client MUST authenticate that root against the underlying
+record before relying on any answer from that instantiation. How the
+client obtains the record is the consuming protocol's to specify; for
+the voting application the client rebuilds the tree, by
+[Tree Construction], from the share nullifiers recorded on the vote
+chain up to the labelled height, read from a node the server's operator
+does not run, and compares the root [^draft-voting-protocol]. Reading
+the record discloses nothing about which element the client will then
+query, since every client reads the same data.
+
 ## Retrieval Schemes
 
 This ZIP defines two retrieval schemes, identified by integer version
@@ -3276,7 +3296,12 @@ Each database is produced and served by a three-stage pipeline.
    consensus nodes, and a service whose root differs serves proofs the
    round will not accept. The share nullifier set is re-exported
    throughout the round's reveal window at a cadence the deployment
-   publishes, each export labelled with the vote chain height it covers.
+   publishes, each export labelled with the vote chain height it covers
+   and published together with the root the operator derived for it.
+   The operator is not the source of that set either: any party can
+   rebuild the tree from the share reveal transactions recorded for the
+   round up to that height, and a wallet does so before relying on an
+   export (see [Membership Queries and Other Nullifier Sets]).
 3. **Serve.** The operator accepts queries under the retrieval schemes
    it supports and returns responses. It gives the consuming protocol's
    poll creator the service's address for inclusion in the vote
@@ -3286,8 +3311,9 @@ Each database is produced and served by a three-stage pipeline.
 A deployment MUST publish, for each nullifier service a round lists:
 the organisation operating it; its address; the retrieval schemes and
 versions it supports (see [Retrieval Schemes]); the snapshot, by height
-and block hash, and the root it derived for it; and the cadence at
-which it re-exports the share nullifier set. An operator learns the
+and block hash, and the root it derived for it; the cadence at which it
+re-exports the share nullifier set; and, for each such export, the vote
+chain height it covers and the root it derived. An operator learns the
 network origin and time of each query, which reveals that some wallet
 is taking part; what it does not learn is stated in
 [Privacy Implications].
