@@ -801,7 +801,13 @@ An application instantiating this ZIP MUST define the following:
   holder's on-chain Orchard addresses. When the PCZT-based signing flow
   is used, the output is addressed to this key (see [Wallet Signing]).
   All subsequent application-level operations use the hotkey in place of
-  the holder's spending key.
+  the holder's spending key. The wallet that constructs the Claim proof
+  and the PCZT MUST generate the hotkey itself and MUST NOT accept a
+  hotkey address from another party: neither the circuit nor the spend
+  authorization signature binds the address to the holder, so an
+  address supplied from outside is authenticated by nothing, and a
+  substituted address transfers the claim to whoever substituted it
+  (see [Device Display]).
 - An **application verifier**: the component that accepts or rejects
   claims by performing the checks in [Out-of-Circuit Verification]. It
   MUST maintain a persistent set of accepted alternate nullifiers per
@@ -889,6 +895,13 @@ The wallet constructs a PCZT as a single-action Orchard transaction:
 #### Output Side
 
 - A single output of 1 zatoshi is addressed to the application hotkey.
+- The PCZT MUST carry the holder's Orchard outgoing viewing key for the
+  output, so that the hardware wallet device can decrypt the output and
+  display its address and memo. A device that cannot decrypt an output
+  treats it as one it need not show, and the display in
+  [Device Display] is the holder's only check of the address being
+  authorized. The key is used by the device for display and does not
+  leave the PCZT, which the wallet does not publish.
 - The output memo SHOULD contain a human-readable delegation description.
   For example, a voting application might use:
 
@@ -937,6 +950,17 @@ The 0.00000001 ZEC amount (1 zatoshi) and 0 ZEC fee confirm that no
 real funds are being transferred. The "To" address matches the
 application hotkey address displayed in the wallet application. The memo
 provides human-readable context for what the user is authorizing.
+
+The wallet MUST show the holder the hotkey address it generated and
+instruct the holder to compare it with the address the device
+displays. This comparison establishes that the device is signing for
+the hotkey the wallet generated, and nothing more: it is meaningful
+only because the wallet displaying the address is the wallet that
+generated it (see [Application Requirements]). An address the wallet
+had accepted from elsewhere would be displayed and confirmed just the
+same. A wallet MUST NOT present a signing flow in which the device
+does not display the output as one in which the holder has confirmed
+the hotkey address.
 
 The hardware wallet device has no awareness of application semantics. It
 interprets the PCZT identically to any other Orchard transaction.
