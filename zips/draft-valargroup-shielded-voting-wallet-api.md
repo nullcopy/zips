@@ -199,7 +199,7 @@ depend, and the encoding conventions for all exchanged data.
 The shielded voting protocol involves multiple ZIPs that specify the
 cryptographic circuits, share submission and election authority key
 ceremony [^voting-protocol], proof-of-balance [^orchard-balance-proof],
-and the operational setup of a deployment [^voting-setup]. A wallet
+and private retrieval of nullifier data [^nullifier-pir]. A wallet
 integrator currently must read several of these
 specifications to understand which endpoints to call, what wire formats
 to use, and how to discover an active vote.
@@ -246,7 +246,7 @@ component has no impact on other components or the configuration schema.
 # Non-requirements
 
 - Trustee onboarding and the EA key ceremony (distributed key
-generation), specified in [^voting-protocol] and [^voting-setup].
+generation), specified in [^voting-protocol].
 - The vote chain's consensus and block production, and the rules by
 which any party interprets its record, which are specified in
 [^voting-protocol]. A vote server applies those rules to serve the
@@ -478,7 +478,7 @@ participate in the round.
 | `nullifier_imt_root`               | string           | Base64-encoded 32-byte nullifier non-membership tree root at the snapshot.                                                     |
 | `vote_end_height`                  | integer          | Vote chain block height after which delegation and vote transactions are no longer effective; the round is REVEALING above it. |
 | `reveal_end_height`                | integer          | Vote chain block height after which share reveal transactions are no longer effective; the round is TALLYING above it.        |
-| `block_time_seconds`               | number           | The vote chain's target block interval in seconds: the chain parameter the deployment published for the chain, as specified in the "Genesis" section of [^voting-setup]. Informational and not signed. A wallet uses it to present heights as estimated times and to size its submission schedule; see [Submission Timing]. |
+| `block_time_seconds`               | number           | The vote chain's target block interval in seconds: the chain parameter the deployment published for the chain, as specified in the "Chain parameters" section of [^voting-protocol]. Informational and not signed. A wallet uses it to present heights as estimated times and to size its submission schedule; see [Submission Timing]. |
 | `proposals`                        | array            | Ordered list of proposals. Each has `id` (integer, 1-indexed), `title` (string), `description` (string), and `options` (array of `{index, label}`). |
 | `trustees`                         | array            | The round's trustees, in the order the round creation transaction names them and the order hashed by [Trustees Hash]. Each entry has `label` (string) and `account_pk` (base64, the 32-byte Ed25519 trustee account key under which the trustee signs its chain transactions). |
 | `supported_versions.pir`           | array of strings | PIR retrieval scheme versions supported by the servers (e.g., `["v0", "v1"]`).                                                 |
@@ -747,8 +747,7 @@ coordination during distributed key generation and have no bearing on
 wallet operations, so they are not documented here. The trustees'
 acknowledgements, which a wallet does check, are served separately by
 [Round Acknowledgements]. See the "Election Authority Key Ceremony"
-section of [^voting-protocol] and
-`draft-valargroup-shielded-voting-setup` [^voting-setup] for details.
+section of [^voting-protocol] for details.
 
 The `proposals` field in the VoteRound response contains the same
 proposals as the vote configuration document. The `proposals_hash`
@@ -1585,8 +1584,6 @@ be adapted to it is at
 [^nullifier-pir]: [Draft ZIP: Nullifier Private Information Retrieval](draft-valargroup-nullifier-pir.md)
 
 [^voting-protocol]: [Draft ZIP: Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
-
-[^voting-setup]: [Draft ZIP: Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup.md)
 
 [^rfc8032]: [RFC 8032: Edwards-Curve Digital Signature Algorithm (EdDSA)](https://www.rfc-editor.org/rfc/rfc8032)
 
