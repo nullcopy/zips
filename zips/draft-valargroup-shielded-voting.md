@@ -642,10 +642,12 @@ nullifier service step of [Snapshot Configuration]).
   serves; the transactions this ZIP defines, their encoding, and the
   rules by which any party interprets them are in scope, see
   [Transaction Formats].
-- How operators are organised to run a deployment: roles, validator
-  onboarding, nullifier service operation, deployment architecture, and
-  audit procedures. These are specified in
-  `draft-valargroup-shielded-voting-setup` [^voting-setup].
+- How a deployment organises its operators, provisions and runs its
+  validators, and operates its infrastructure. What a deployment MUST
+  publish is stated in [Deployment]; how it produces those values is
+  its own matter. The operation of a nullifier service is specified in
+  the "Deployment" section of `draft-valargroup-nullifier-pir`
+  [^nullifier-pir].
 - Post-quantum security of the El Gamal encryption layer is out of
   scope.
 - Retrieval of nullifier non-membership proofs by clients that do not
@@ -2166,9 +2168,8 @@ runner's signature, the election authority key ceremony that produces
 the round's key, the ratification that opens voting, and cancellation.
 Every rule here is a rule for interpreting the vote chain's record,
 applied by any party that reads it (see [Vote Chain Record]); the vote
-chain enforces none of them. Who performs each step, and how operators
-are organised to do so, is specified in
-`draft-valargroup-shielded-voting-setup` [^voting-setup].
+chain enforces none of them. Who performs each step is stated with the
+step.
 
 ### Round Lifecycle
 
@@ -2331,14 +2332,12 @@ coordinated activities:
 
 2. **Ensure the nullifier service has the snapshot's PIR
    database.** Where the deployment offers a nullifier service, the
-   poll creator coordinates with each nullifier service operator (see
-   the "Nullifier Service Operator" section of
-   `draft-valargroup-shielded-voting-setup` [^voting-setup]) so that
-   their ingest and export pipelines (see the "Nullifier Service"
-   section of that document) have run to the chosen height before the
-   round opens, so wallets can retrieve exclusion proofs against that
-   snapshot by private information retrieval
-   (`draft-valargroup-nullifier-pir` [^nullifier-pir]).
+   poll creator coordinates with each nullifier service operator so
+   that its ingest and export pipeline (see the "Deployment" section of
+   `draft-valargroup-nullifier-pir` [^nullifier-pir]) has run to the
+   chosen snapshot before the round opens, so wallets can retrieve
+   exclusion proofs against that snapshot by private information
+   retrieval.
 
 3. **Carry the values in the round creation transaction.**
    $\mathsf{nc}\_\mathsf{root}$ and
@@ -2446,6 +2445,18 @@ round while it is pending (see [Cancellation]). It is not otherwise
 trusted; what a wallet takes from it is the trustee set, on which the
 protocol's trust assumptions rest.
 
+**Trustee keys.** A prospective trustee generates its trustee account
+key and its trustee ceremony key, funds the account from which it will
+record its transactions, and gives the poll creator both public keys
+and the identity of the organisation operating it, through a channel
+that authenticates the trustee. A poll creator MUST NOT name a trustee
+whose ceremony key it has not received through such a channel: a
+trustee that does not hold the corresponding private key cannot decrypt
+the shares dealt to it, and the ceremony fails. Funding a trustee's
+account confers no standing on the vote chain beyond the ability to
+record transactions; a trustee is not a validator (see
+[Requirements]).
+
 The round enters PENDING at $H_c$, and the key ceremony begins in the
 following block (see [Election Authority Key Ceremony]). Once the
 ceremony completes and every trustee has ratified the round (see
@@ -2549,10 +2560,10 @@ ceremony key, a Pallas public key under which the shares dealt to it
 are encrypted. Let $n$ be their number and index them $1, \ldots, n$
 in the order the round creation transaction lists them; a trustee's
 index is its evaluation point. The round's decryption threshold is
-$t = \lceil n/2 \rceil + 1$, with a minimum of 2. How trustees are
-selected and how the poll creator obtains their keys is specified in
-`draft-valargroup-shielded-voting-setup` [^voting-setup]. A trustee
-MUST NOT be a validator of the vote chain, for any round on it.
+$t = \lceil n/2 \rceil + 1$, with a minimum of 2. Whom the poll
+creator names is its choice; how it obtains their keys is stated in
+[Poll Creation]. A trustee MUST NOT be a validator of the vote chain,
+for any round on it.
 
 **Timing.** The ceremony runs on a fixed grid of vote chain heights
 set by the round creation transaction. An attempt consists of five
@@ -4059,15 +4070,22 @@ section.
 ## Chain parameters
 
 The vote chain's **target block interval** is a parameter of the chain,
-fixed at its genesis and published by its deployment, as specified in
-the "Genesis" section of `draft-valargroup-shielded-voting-setup`
-[^voting-setup]. Every round on the chain inherits it. This ZIP
-consumes it in two places: $\Delta$ is stated as a number of blocks
-derived from it, and the submission schedule in [Submission Timing]
-is drawn in blocks and presented to voters as time through it. The
-interval is a target, not a guarantee; heights are the only
-consensus-level measure of time in this ZIP, and a time derived from a
-height is an estimate.
+fixed when the chain is launched and published by its deployment.
+Every round on the chain inherits it, and a poll creator cannot choose
+a different one. This ZIP consumes it in two places: $\Delta$ is stated
+as a number of blocks derived from it, and the submission schedule in
+[Submission Timing] is drawn in blocks and presented to voters as time
+through it. The interval is a target, not a guarantee: the consensus
+engine does not enforce it, heights are the only consensus-level
+measure of time in this ZIP, and a time derived from a height is an
+estimate.
+
+A deployment MUST also publish, for the chain: its chain identifier;
+the network address of at least one vote chain node, so that nodes,
+poll creators and wallets can find the chain; the fee it charges to
+record a transaction (see [Vote Chain Record]); and the organisation
+operating each validator, with the stake distribution across them (see
+[Transaction Inclusion]).
 
 ## Round parameters
 
@@ -4081,6 +4099,7 @@ height is an estimate.
 | $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
 | The trustee share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
 | The validator stake distribution | Sizes the coalition able to exclude transactions; see [Transaction Inclusion]. |
+| For each nullifier service the round lists: its operator, the retrieval schemes it supports, and the cadence at which it re-exports the round's share nullifier set | Lets wallets choose a scheme and bounds how stale a confirmation can be; see the "Deployment" section of `draft-valargroup-nullifier-pir` [^nullifier-pir]. |
 | The proportion of a round's votes revealed by express reveal | Bounds the votes whose weight a key-share coalition can recover from the record; the bursts express reveal produces are visible in the record, so this is an estimate any party can check. See [Share Submission]. |
 
 The RECOMMENDED value of $\mathsf{min}\_\mathsf{confirmations}$ is 100
@@ -4156,6 +4175,22 @@ No reference implementation of this ZIP exists at the time of writing.
   one overdue message per open under [Submission Timing] and may reveal
   only part of its weight. A verifier cannot distinguish that from a
   smaller vote. The reveal window length is the only lever.
+- **Implementation diversity.** A result is described as coinholder
+  sentiment, but where one client is the only practical way to vote,
+  its defaults — how it decomposes shares, when it submits, how it
+  catches up — are the protocol as every voter experiences it. The
+  conditions under which a result may be described as representative
+  are not specified. Requiring that some number of independent
+  implementations be *available* is not checkable, and is met by two
+  implementations one of which casts nearly every ballot. A checkable
+  form would bound the share of ballots, or of voting weight, cast
+  through any one implementation, and would bind the deployment that
+  publishes the result.
+- **Spam and fees.** Because the chain records transactions this ZIP
+  treats as ineffective, the only bound on the record's growth is the
+  fee the chain charges to record a transaction. What fee schedule a
+  deployment applies, and how voters' wallets obtain the funds to pay
+  it without linking a payment to a vote, are not specified.
 - **Nullifier index maintenance.** A Zcash consensus node that serves
   $\mathsf{nullifier}\_\mathsf{imt}\_\mathsf{root}$ must maintain the
   index across chain reorganisations — tracking the block hash at which
@@ -4207,8 +4242,6 @@ No reference implementation of this ZIP exists at the time of writing.
 [^nullifier-pir]: [Draft ZIP: Nullifier Private Information Retrieval](draft-valargroup-nullifier-pir.md)
 
 [^wallet-api]: [Draft ZIP: Shielded Voting Wallet API](draft-valargroup-shielded-voting-wallet-api.md)
-
-[^voting-setup]: [Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup.md)
 
 
 [^halo2]: [S. Bowe, J. Grigg, and D. Hopwood, "Recursive Proof Composition without a Trusted Setup", 2019](https://eprint.iacr.org/2019/1021)
