@@ -396,7 +396,8 @@ An operator building this tree MUST derive the nullifier set from its
 own view of the consensus chain, and MUST NOT accept the set, or a root
 committing to it, from another party. Where an application specifies a
 derivation procedure for the set — as the shielded voting application
-does in `draft-valargroup-shielded-voting-setup` [^voting-setup] — the
+does in the "Reading the Snapshot Roots" section of
+`draft-valargroup-shielded-voting` [^draft-voting-protocol] — the
 operator MUST follow it, and MUST publish
 the root it derives so that disagreement between operators is visible.
 
@@ -3233,10 +3234,65 @@ Tier 1 response.
 
 # Deployment
 
-This section will be completed before this ZIP advances to Proposed
-status.
+## Nullifier Service Operation
 
-<div class="note"></div>
+A server that offers the retrieval schemes of this ZIP to a consuming
+protocol is a **nullifier service**, run by a **nullifier service
+operator**. The role is OPTIONAL for the consuming protocol: a client
+that holds the set builds its own proofs, and a client that holds the
+consuming chain's record reads it, so a deployment whose clients do
+both need not run one.
+
+For the shielded voting application [^draft-voting-protocol] a
+nullifier service serves two databases, each an instance of
+[Nullifier Exclusion Tree]:
+
+- the **snapshot nullifier set**: the Ironwood pool nullifiers revealed
+  at or before the round's snapshot block, against which a wallet
+  proves that a note was unspent; and
+- the **share nullifier set**: the share nullifiers of the share reveal
+  transactions recorded on the vote chain for the round, as of a stated
+  vote chain height, against which a wallet confirms that its own
+  reveals were recorded (see [Membership Queries and Other Nullifier
+  Sets]).
+
+Each database is produced and served by a three-stage pipeline.
+
+1. **Ingest.** For the snapshot nullifier set, the operator fetches the
+   Ironwood pool nullifier set up to the snapshot height from a Zcash
+   consensus node under its own control, following the chain whose
+   block at that height has the snapshot's block hash and tracking
+   reorganisations as [Tree Construction] requires, so that the tree
+   built next is that of the snapshot. For the share nullifier set, the
+   operator reads the share nullifiers of the share reveal transactions
+   recorded for the round from a vote chain node, up to a chosen height.
+2. **Export.** The operator builds the tree as [Nullifier Exclusion
+   Tree] specifies and exports the tier databases and the `Server_Setup`
+   material of [PIR Operations], so that the server can restart without
+   rebuilding the tree from raw nullifiers. The snapshot nullifier set
+   is exported once per round; the root the operator derives MUST equal
+   the root the round names, and the operator is not the source of that
+   root: the consuming protocol's parties read it from their own Zcash
+   consensus nodes, and a service whose root differs serves proofs the
+   round will not accept. The share nullifier set is re-exported
+   throughout the round's reveal window at a cadence the deployment
+   publishes, each export labelled with the vote chain height it covers.
+3. **Serve.** The operator accepts queries under the retrieval schemes
+   it supports and returns responses. It gives the consuming protocol's
+   poll creator the service's address for inclusion in the vote
+   configuration (see `draft-valargroup-shielded-voting-wallet-api`
+   [^draft-wallet-api]).
+
+A deployment MUST publish, for each nullifier service a round lists:
+the organisation operating it; its address; the retrieval schemes and
+versions it supports (see [Retrieval Schemes]); the snapshot, by height
+and block hash, and the root it derived for it; and the cadence at
+which it re-exports the share nullifier set. An operator learns the
+network origin and time of each query, which reveals that some wallet
+is taking part; what it does not learn is stated in
+[Privacy Implications].
+
+## Server Hardware
 
 Server deployment benefits from AVX-512 support for the ring-packing
 step (the CDKS LWE-to-RLWE transformation), which involves NTT-based
@@ -3318,6 +3374,6 @@ three-tier Poseidon tree, the Tier 1 / Tier 2 query orchestration described in t
 
 [^draft-valargroup-orchard-balance-proof]: [Orchard Proof-of-Balance](draft-valargroup-orchard-balance-proof.md)
 
-[^voting-setup]: [Draft ZIP: Zcash Shielded Coinholder Voting](draft-valargroup-shielded-voting-setup.md)
-
 [^draft-voting-protocol]: [Draft ZIP: Zcash Shielded Voting Protocol](draft-valargroup-shielded-voting.md)
+
+[^draft-wallet-api]: [Draft ZIP: Shielded Voting Wallet API](draft-valargroup-shielded-voting-wallet-api.md)
