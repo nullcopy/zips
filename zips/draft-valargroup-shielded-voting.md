@@ -399,7 +399,11 @@ cooperation — is treated as having had them throughout it.
   whether an Ironwood pool nullifier at delegation or a share nullifier
   at confirmation, unless its retrieval protocol conceals the query, as
   the private information retrieval of `draft-valargroup-nullifier-pir`
-  [^nullifier-pir] does.
+  [^nullifier-pir] does. It chooses what it serves: a snapshot tree
+  other than the round's yields proofs the round does not accept, and a
+  share nullifier tree other than the record's misreports whether a
+  message was recorded unless the client checks the tree's root against
+  the record (see [Share Submission]).
 - **Identity linker.** Any party able to tie a network origin to a
   person: an origin also used with an identifying service, a
   provider's records, or a compelled disclosure. The protocol treats
@@ -1151,6 +1155,24 @@ holder's key; the output address is bound to the delegation
 transitively through the VAN commitment and the rho binding (see
 [Delegation Proof]), which the holder's hardware wallet authenticates
 via the spend authorization signature.
+
+Because nothing in the circuit or the signature binds the address to
+the holder, whoever supplies the address to the party constructing the
+delegation chooses where the voting weight goes, and a substituted
+address is one whose key the substituting party holds. The hotkey whose
+address enters the VAN MUST therefore be generated, as specified below,
+by the wallet that constructs the Delegation Proof, on the device that
+holds it. A wallet MUST NOT accept a hotkey address for delegation from
+any other input — a file, a message, another device or another party —
+and MUST NOT construct a delegation to an address it did not derive
+itself. A flow in which the party holding the hotkey and the party
+constructing the delegation differ, and the address travels between
+them, is not specified in this ZIP; such a flow would have to
+authenticate the address as the voter's to the constructing party by
+means outside this protocol, and a signature by the key the address
+names does not do so. Delegation of weight to another party is a
+separate matter, not specified here; see [Open issues] on partial
+delegation.
 
 The hotkey MUST be derived deterministically from a seed
 $\mathsf{seed}\_\mathsf{v}$. The wallet MUST generate
@@ -1942,14 +1964,38 @@ nullifier service by private information retrieval: the service builds
 the exclusion tree of `draft-valargroup-nullifier-pir`
 [^nullifier-pir] over the share nullifiers of every share reveal
 transaction recorded for the round as of a stated vote chain height,
-re-exports it at a published cadence, and serves it exactly as it
-serves the snapshot's nullifier set; the client retrieves the
-authentication data for its own share nullifier as it would for an
-exclusion proof. A nullifier the tree contains is recorded; one it
-does not contain is not recorded as of that height. A client MUST NOT
-ask any party about a share nullifier in the clear, and MUST apply
-rule 1 to each query. The reconciliation the catch-up rules in
-[Submission Timing] require is performed by these means.
+publishes that height and the tree's root with each export, re-exports
+at a published cadence, and serves it exactly as it serves the
+snapshot's nullifier set; the client retrieves the authentication data
+for its own share nullifier as it would for an exclusion proof. A
+nullifier the tree contains is recorded as of that height; one it does
+not contain is not. A client MUST NOT ask any party about a share
+nullifier in the clear, and MUST apply rule 1 to each query. The
+reconciliation the catch-up rules in [Submission Timing] require is
+performed by these means.
+
+The answer is only as good as the root. The nullifier service is not
+the source of the record, and a service that dropped a message, or
+whose operator also runs the node that received it, can export a tree
+that includes the message's nullifier as easily as one that omits it;
+a client that accepted such a tree would stop resubmitting a message
+that was never recorded, and would report the share as revealed. A
+client MUST therefore verify an export's root against the record
+before relying on any answer from it: it obtains the share nullifiers
+of the share reveal transactions recorded for the round up to the
+export's height, from its own node or from a vote chain node that is
+not operated by the nullifier service's operator, rebuilds the tree as
+`draft-valargroup-nullifier-pir` [^nullifier-pir] specifies, and
+compares the root. Obtaining that list discloses nothing: it is the
+same public data for every client, and a client MAY read it from more
+than one node. A membership answer against a root the client has not
+verified establishes only what the service chose to serve, and a
+client MUST NOT treat it as confirmation. What a verified root
+establishes is that the service and the node the client read the
+record from agree; misleading the client then requires the node it
+submitted to, the service and that node to present the same
+fabricated record to it alone, which a comparison with any further
+node exposes.
 
 **Retry.** A client that observes that a message has not been recorded
 within a client-configured number of blocks after its drawn height MAY
@@ -4099,7 +4145,7 @@ operating each validator, with the stake distribution across them (see
 | $\mathsf{min}\_\mathsf{confirmations}$ | The confirmation depth used when choosing the snapshot; see [Snapshot Configuration]. |
 | The trustee share retention period | Bounds the period over which amount-privacy claims hold; see [Election Authority Key Custody]. |
 | The validator stake distribution | Sizes the coalition able to exclude transactions; see [Transaction Inclusion]. |
-| For each nullifier service the round lists: its operator, the retrieval schemes it supports, and the cadence at which it re-exports the round's share nullifier set | Lets wallets choose a scheme and bounds how stale a confirmation can be; see the "Deployment" section of `draft-valargroup-nullifier-pir` [^nullifier-pir]. |
+| For each nullifier service the round lists: its operator, the retrieval schemes it supports, the cadence at which it re-exports the round's share nullifier set, and the height and root of each export | Lets wallets choose a scheme, bounds how stale a confirmation can be, and lets any party check an export against the record; see [Share Submission] and the "Deployment" section of `draft-valargroup-nullifier-pir` [^nullifier-pir]. |
 | The proportion of a round's votes revealed by express reveal | Bounds the votes whose weight a key-share coalition can recover from the record; the bursts express reveal produces are visible in the record, so this is an estimate any party can check. See [Share Submission]. |
 
 The RECOMMENDED value of $\mathsf{min}\_\mathsf{confirmations}$ is 100
